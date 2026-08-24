@@ -2,15 +2,17 @@ import { useCallback, useEffect, useState } from "react";
 import { formatKoreanDate, isISODate, todayISO } from "@shared/date";
 import { AppShell } from "./components/AppShell";
 import { Card } from "./components/Card";
-import { ContinueCard, LaunchpadCard, ScheduleCard } from "./components/cards";
-import { NewsCard } from "./components/NewsCard";
 import { Setup } from "./Setup";
+import { Home } from "./views/Home";
+import { News } from "./views/News";
+import { Settings } from "./views/Settings";
 import { fetchBriefing, type BriefingResult } from "./lib/api";
 import { clearConfig, loadConfig, type Config } from "./lib/config";
+import { hrefFor, viewFromLocation, type ViewId } from "./lib/views";
 
 /**
- * 날짜는 경로가 아니라 쿼리로 받는다 (?d=2026-08-24).
- * 정적 호스팅은 /d/2026-08-24 같은 경로에 해당 파일이 없으면 404 를 내기 때문.
+ * 날짜도 화면도 경로가 아니라 쿼리로 받는다 (?v=news&d=2026-08-24).
+ * 정적 호스팅은 해당 경로에 파일이 없으면 404 를 내기 때문.
  */
 function dateFromLocation(): string {
   const requested = new URLSearchParams(window.location.search).get("d");
@@ -22,6 +24,7 @@ export default function App() {
   const [editingConfig, setEditingConfig] = useState(false);
   const [result, setResult] = useState<BriefingResult | null>(null);
 
+  const view = viewFromLocation(window.location.search);
   const date = dateFromLocation();
   const today = todayISO();
 
@@ -35,8 +38,15 @@ export default function App() {
 
   useEffect(() => {
     if (!config) return;
+    // 설정 화면은 브리핑을 쓰지 않는다. 불필요한 요청을 보내지 않는다.
+    if (view === "settings") return;
     void load(config);
-  }, [config, load]);
+  }, [config, load, view]);
+
+  const reconnect = () => {
+    clearConfig();
+    setConfig(null);
+  };
 
   if (!config || editingConfig) {
     return (
@@ -52,30 +62,31 @@ export default function App() {
   }
 
   return (
-    <AppShell
-      dateLabel={formatKoreanDate(date)}
-      todayHref={`?d=${today}`}
-      onOpenSettings={() => setEditingConfig(true)}
-    >
-      <Body
-        result={result}
-        date={date}
-        today={today}
-        onReconnect={() => {
-          clearConfig();
-          setConfig(null);
-        }}
-      />
+    <AppShell view={view} dateLabel={formatKoreanDate(date)} date={date === today ? undefined : date}>
+      {view === "settings" ? (
+        <Settings config={config} onReconnect={reconnect} />
+      ) : (
+        <BriefingView
+          view={view}
+          result={result}
+          date={date}
+          today={today}
+          onReconnect={reconnect}
+        />
+      )}
     </AppShell>
   );
 }
 
-function Body({
+/** 홈·뉴스는 같은 브리핑을 본다. 실패 처리도 같아서 한 군데로 모은다. */
+function BriefingView({
+  view,
   result,
   date,
   today,
   onReconnect,
 }: {
+  view: ViewId;
   result: BriefingResult | null;
   date: string;
   today: string;
@@ -112,18 +123,18 @@ function Body({
 
   if (result.kind === "unauthorized") {
     return (
-      <Card title="🔑 토큰이 맞지 않음">
+      <Card title="🔑 인증되지 않음">
         <div className="flex flex-col items-start gap-3">
-          <p className="text-sm">서버가 이 토큰을 거부했습니다.</p>
+          <p className="text-sm">서버가 이 연결을 거부했습니다.</p>
           <p className="text-xs text-muted">
-            서버의 API_TOKEN 과 같은 값인지 확인해 주세요.
+            로그인이 만료됐거나 비밀번호·토큰이 바뀌었을 수 있습니다.
           </p>
           <button
             type="button"
             onClick={onReconnect}
             className="min-h-11 rounded-lg border border-border px-3 text-sm hover:border-accent hover:text-accent"
           >
-            토큰 다시 입력
+            다시 연결
           </button>
         </div>
       </Card>
@@ -145,7 +156,7 @@ function Body({
           </p>
           {date !== today ? (
             <a
-              href={`?d=${today}`}
+              href={hrefFor(view, today)}
               className="inline-flex min-h-11 items-center rounded-lg border border-border px-3 text-sm hover:border-accent hover:text-accent"
             >
               오늘로 가기 →
@@ -156,27 +167,9 @@ function Body({
     );
   }
 
-  return (
-    <div className="flex flex-col gap-4">
-      <p className="text-sm text-muted">{briefing.headline}</p>
-
-      {/* PC 2단 · 모바일 1단. 카드는 그대로고 배치만 바뀐다. */}
-      <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-        <NewsCard
-          items={briefing.news}
-          generatedAt={briefing.generatedAt}
-          sample={briefing.sample}
-        />
-
-        <div className="flex flex-col gap-4">
-          <ScheduleCard items={briefing.schedule} />
-          <ContinueCard items={briefing.continues} />
-        </div>
-
-        <div className="lg:col-span-2">
-          <LaunchpadCard items={briefing.launchpad} />
-        </div>
-      </div>
-    </div>
+  return view === "news" ? (
+    <News briefing={briefing} date={date} today={today} />
+  ) : (
+    <Home briefing={briefing} date={date === today ? undefined : date} />
   );
 }

@@ -46,18 +46,35 @@ URL 은 **미리 등록된 것을 가리키는 ID** 만 담는다. 무엇을 할
 
 ## 구조
 
+**화면과 데이터를 갈라놓았다.** 화면은 어디서든 열려야 하고(폰·PC·나중엔 크롬 새 탭),
+수집·요약·시크릿은 브라우저가 꺼져 있어도 돌아야 하기 때문이다.
+
 ```
-web/        Next.js — UI + API + cron. 배포 단위는 이 컨테이너 하나
+client/     Vite + React → 정적 번들. GitHub Pages 로 배포. 나중에 크롬 확장에도 같은 번들
+server/     Next.js — JSON API 전용. 수집·요약·cron·시크릿은 전부 여기. Docker 로 자체 호스팅
+shared/     client·server 가 같이 쓰는 타입 (Briefing 등)
 handler/    herald:// 스킴 핸들러 (Windows). 아직 없음
-shared/     web 과 handler 가 같이 쓰는 액션 스키마. 아직 없음
 ```
 
-`handler/` 와 `shared/` 를 같은 리포에 두는 이유: 액션 스키마는 서버가 만들고 핸들러가 해석한다.
-리포가 갈리면 이 둘의 버전이 어긋나는 순간 **조용히** 오작동한다.
+- **서버는 HTML 을 주지 않는다.** JSON 만 준다
+- `shared/` 가 양쪽 밖에 있어서 각각 경로 별칭으로 집는다 —
+  `server/next.config.ts` 는 프로젝트 루트를 리포 최상단으로 올리고,
+  `client/vite.config.ts` 는 `@shared` alias 를 건다
+- 같은 리포에 두는 이유: 타입이 갈리면 **조용히** 어긋난다
 
 ## 스택
 
-Next.js (App Router) · SQLite + Drizzle · Docker · Auth.js(Discord OAuth)
+`client` Vite · React 19 · Tailwind v4
+`server` Next.js 16 (App Router, API 전용) · SQLite + Drizzle(예정) · Docker
+
+## 인증
+
+**토큰 하나.** 클라이언트가 처음 열릴 때 서버 주소와 토큰을 입력받아 `localStorage` 에 두고,
+이후 `Authorization: Bearer` 로 부른다. 서버는 `API_TOKEN` 과 대조한다.
+
+- 쿠키를 쓰지 않는 이유: 클라이언트와 서버가 다른 오리진이라 크로스사이트 쿠키가 안 실린다
+- 토큰을 빌드에 박지 않는 이유: **Pages 는 공개다.** 번들에 넣으면 누구나 꺼내 쓴다
+- `API_TOKEN` 이 비어 있으면 전부 401 (fail-closed)
 
 ## 설계 전제
 

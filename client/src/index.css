@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f6f6f7;
+  --foreground: #17171a;
+  --card: #ffffff;
+  --border: #e4e4e8;
+  --muted: #6b7280;
+  --accent: #c2410c; /* 수탉 벼슬 */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0b0b0d;
+    --foreground: #ededed;
+    --card: #151518;
+    --border: #2a2a31;
+    --muted: #9ca3af;
+    --accent: #f59e0b;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}

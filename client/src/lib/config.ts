@@ -12,8 +12,15 @@ export type Config = {
   token: string;
 };
 
-/** 개발 편의용 기본값. 설정 화면의 입력칸을 미리 채우는 용도일 뿐이다. */
-export const defaultApiBase = import.meta.env.VITE_API_BASE ?? "";
+/**
+ * 설정 화면의 서버 주소 칸을 미리 채운다.
+ *
+ * 주소는 번들에 박아도 된다 — DNS 로 조회되고 HTTPS 인증서가 CT 로그에
+ * 공개로 남으므로 애초에 숨길 수 있는 값이 아니다.
+ * ⛔ 토큰은 절대 여기 오면 안 된다. Pages 번들은 누구나 내려받아 읽는다.
+ */
+export const defaultApiBase =
+  import.meta.env.VITE_API_BASE ?? "https://lkm0222.duckdns.org";
 
 export function loadConfig(): Config | null {
   try {

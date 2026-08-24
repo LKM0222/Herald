@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ThemeToggle } from "./ThemeToggle";
 
 /**
  * 같은 내비게이션을 두 자리에 놓는다 —
@@ -25,19 +26,31 @@ export function AppShell({
 }) {
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col">
-      <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
-        <div className="flex items-baseline gap-2">
+      <header className="flex items-center justify-between gap-2 border-b border-border px-4 py-3 sm:px-6">
+        {/* 좁은 화면에선 날짜가 줄어들며 버티게 한다 — 브레이크포인트로 끊지 않는다 */}
+        <div className="flex min-w-0 items-baseline gap-2">
           <span className="text-lg leading-none">🐓</span>
-          <span className="font-semibold tracking-tight">Herald</span>
-          <span className="text-sm text-muted">{dateLabel}</span>
+          {/* 모바일에선 수탉이 곧 로고다. 글자까지 둘 자리가 없다 */}
+          <span className="hidden font-semibold tracking-tight sm:inline">
+            Herald
+          </span>
+          <span className="truncate text-sm text-muted">{dateLabel}</span>
         </div>
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          className="min-h-11 rounded-lg border border-border px-3 text-xs text-muted hover:text-foreground"
-        >
-          연결 설정
-        </button>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <ThemeToggle />
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            aria-label="연결 설정"
+            className="flex h-10 min-w-10 items-center justify-center rounded-lg border border-border px-2 text-xs text-muted hover:text-foreground sm:px-3"
+          >
+            <span aria-hidden="true" className="sm:hidden">
+              ⚙
+            </span>
+            <span className="hidden sm:inline">연결 설정</span>
+          </button>
+        </div>
       </header>
 
       <div className="flex flex-1">

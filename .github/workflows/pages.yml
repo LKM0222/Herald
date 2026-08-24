@@ -35,8 +35,9 @@ jobs:
       - run: npm ci
         working-directory: client
 
-      # VITE_API_BASE 를 주지 않는다. 서버 주소와 토큰은 사용자가 브라우저에서
-      # 직접 넣는다 — Pages 는 공개라 빌드에 박으면 누구나 꺼내볼 수 있다.
+      # VITE_API_BASE 를 주지 않는다 — 서버 주소 기본값은 config.ts 에 있다.
+      # ⛔ 토큰은 어떤 경로로도 빌드에 넣지 않는다. Pages 는 공개라
+      #    번들에 들어가는 순간 누구나 꺼내 쓸 수 있다. 사용자가 브라우저에 직접 넣는다.
       - run: npm run build
         working-directory: client
 

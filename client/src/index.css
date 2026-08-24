@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/*
+ * 라이트가 기본, 다크는 [data-theme="dark"] 하나로만 걸린다.
+ * `prefers-color-scheme` 을 여기서 쓰지 않는 이유는 theme.ts 주석 참고 —
+ * 시스템 해석은 JS 가 하고 CSS 는 결론만 받는다.
+ */
 :root {
   --background: #f6f6f7;
   --foreground: #17171a;
@@ -9,15 +14,13 @@
   --accent: #c2410c; /* 수탉 벼슬 */
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0b0b0d;
-    --foreground: #ededed;
-    --card: #151518;
-    --border: #2a2a31;
-    --muted: #9ca3af;
-    --accent: #f59e0b;
-  }
+:root[data-theme="dark"] {
+  --background: #0b0b0d;
+  --foreground: #ededed;
+  --card: #151518;
+  --border: #2a2a31;
+  --muted: #9ca3af;
+  --accent: #f59e0b;
 }
 
 @theme inline {

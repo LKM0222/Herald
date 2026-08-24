@@ -5,6 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <title>Herald</title>
+    <script>
+      // 번들이 로드되기 전에 테마를 확정한다.
+      // React 가 붙기를 기다리면 라이트 화면이 한 번 번쩍인다.
+      // theme.ts 와 같은 규칙을 쓰지만, 여기선 의존성 없이 굴러야 해서 손으로 적는다.
+      (function () {
+        try {
+          var saved = localStorage.getItem("herald.theme");
+          var dark =
+            saved === "dark" ||
+            ((saved === "system" || saved === null) &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          var root = document.documentElement;
+          root.dataset.theme = dark ? "dark" : "light";
+          root.style.colorScheme = dark ? "dark" : "light";
+        } catch (_) {
+          // 저장소가 막혀 있어도 앱은 떠야 한다. 기본 팔레트(라이트)로 간다.
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

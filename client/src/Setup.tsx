@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ThemeToggle } from "./components/ThemeToggle";
 import { defaultApiBase, saveConfig, type Config } from "./lib/config";
 
 /**
@@ -43,7 +44,7 @@ export function Setup({
           <input
             value={apiBase}
             onChange={(event) => setApiBase(event.target.value)}
-            placeholder="http://localhost:3100"
+            placeholder="https://herald.example.com"
             autoComplete="off"
             spellCheck={false}
             className="min-h-11 rounded-lg border border-border bg-card px-3 text-sm"
@@ -56,6 +57,7 @@ export function Setup({
             value={token}
             onChange={(event) => setToken(event.target.value)}
             type="password"
+            autoFocus={apiBase.trim() !== ""}
             autoComplete="off"
             className="min-h-11 rounded-lg border border-border bg-card px-3 text-sm"
           />
@@ -84,6 +86,12 @@ export function Setup({
           이 브라우저에만 저장됩니다. 서버로 전송되는 건 요청할 때뿐이고,
           빌드된 파일에는 들어가지 않습니다.
         </p>
+
+        {/* 아직 연결 전이라도 테마는 고를 수 있어야 한다 —
+            눈이 부신 채로 토큰을 입력하게 만들 이유가 없다 */}
+        <div className="flex justify-center">
+          <ThemeToggle />
+        </div>
       </form>
     </main>
   );

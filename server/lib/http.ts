@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import { verifyToken } from "./auth";
 
 /**
  * 이 서버는 JSON만 내어준다. 화면은 GitHub Pages(그리고 나중에 크롬 확장)에 따로 있고,
@@ -24,7 +25,7 @@ export function corsHeaders(origin: string | null): Record<string, string> {
 
   return {
     "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Authorization, Content-Type",
     "Access-Control-Max-Age": "86400",
     // 오리진마다 응답이 다르므로 캐시가 섞이지 않게 한다.
@@ -41,18 +42,23 @@ function safeEquals(a: string, b: string): boolean {
 }
 
 /**
- * Authorization: Bearer <토큰> 을 API_TOKEN 과 대조한다.
- * API_TOKEN 이 비어 있으면 전부 거부한다(fail-closed).
+ * Authorization: Bearer <값> 을 확인한다. 받아주는 값은 두 가지다.
+ *
+ * 1. 비밀번호 로그인으로 발급된 세션 토큰 — 평소 경로
+ * 2. .env 의 API_TOKEN — 비밀번호를 잊었을 때의 복구 경로이자
+ *    비밀번호를 처음 설정할 때의 부트스트랩
+ *
+ * 둘 다 설정돼 있지 않으면 전부 거부한다(fail-closed).
  */
 export function isAuthorized(request: Request): boolean {
-  const expected = process.env.API_TOKEN ?? "";
-  if (!expected) return false;
-
   const header = request.headers.get("authorization") ?? "";
   const [scheme, token] = header.split(" ");
   if (scheme !== "Bearer" || !token) return false;
 
-  return safeEquals(token, expected);
+  if (verifyToken(token)) return true;
+
+  const recovery = process.env.API_TOKEN ?? "";
+  return recovery !== "" && safeEquals(token, recovery);
 }
 
 export function json(

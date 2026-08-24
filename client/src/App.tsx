@@ -2,12 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { formatKoreanDate, isISODate, todayISO } from "@shared/date";
 import { AppShell } from "./components/AppShell";
 import { Card } from "./components/Card";
-import {
-  ContinueCard,
-  LaunchpadCard,
-  NewsCard,
-  ScheduleCard,
-} from "./components/cards";
+import { ContinueCard, LaunchpadCard, ScheduleCard } from "./components/cards";
+import { NewsCard } from "./components/NewsCard";
 import { Setup } from "./Setup";
 import { fetchBriefing, type BriefingResult } from "./lib/api";
 import { clearConfig, loadConfig, type Config } from "./lib/config";
@@ -166,7 +162,11 @@ function Body({
 
       {/* PC 2단 · 모바일 1단. 카드는 그대로고 배치만 바뀐다. */}
       <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-        <NewsCard items={briefing.news} generatedAt={briefing.generatedAt} />
+        <NewsCard
+          items={briefing.news}
+          generatedAt={briefing.generatedAt}
+          sample={briefing.sample}
+        />
 
         <div className="flex flex-col gap-4">
           <ScheduleCard items={briefing.schedule} />

@@ -10,56 +10,110 @@ import type { Briefing } from "@shared/types";
  */
 export async function getBriefing(date: string): Promise<Briefing | null> {
   if (date !== todayISO()) return null;
-  return { ...SAMPLE, date };
+  return { ...SAMPLE, date, news: SAMPLE.news.map(withFreshTime) };
 }
 
+/**
+ * 더미의 발행 시각을 오늘로 끌어온다.
+ * 고정 날짜로 두면 화면에 "180일 전"이 뜨는데, 그건 시간 표기가 고장 난 것처럼 보인다.
+ */
+function withFreshTime<T extends { publishedAt: string }>(item: T): T {
+  const hoursAgo = Number(item.publishedAt);
+  return {
+    ...item,
+    publishedAt: new Date(Date.now() - hoursAgo * 3600_000).toISOString(),
+  };
+}
+
+/**
+ * ⚠ 전부 가짜다. 실제 기사가 아니다.
+ *
+ * 화면 형태를 잡기 위한 것이므로 `sample: true` 로 표시해서
+ * 화면이 "샘플"이라고 말하게 한다 — 진짜 브리핑으로 오해되면 안 된다.
+ * `publishedAt` 은 "몇 시간 전"을 뜻하는 숫자이고 위에서 실제 시각으로 바뀐다.
+ */
 const SAMPLE: Briefing = {
   date: "",
+  sample: true,
   generatedAt: "08:30",
-  headline: "오늘 12건 중 3건이 내 프로젝트와 관련 있습니다.",
+  headline: "샘플 6건 — 실제 수집은 아직 붙지 않았습니다.",
   news: [
     {
       id: "n1",
-      category: "AI",
-      title: "Anthropic, 컨텍스트 확장 발표",
-      url: "https://www.anthropic.com/news",
+      title: "[샘플] Model context window expanded",
+      url: "https://example.com/sample-1",
+      source: "샘플 매체 A",
+      publishedAt: "3",
+      topic: "AI 모델",
+      priority: 1,
+      summary: "모델 컨텍스트 한도가 크게 늘었다는 가상의 발표",
+      relevance: "요약 단계에서 기사를 잘라 넣는 처리를 안 해도 될 수 있다",
+      alsoIn: [
+        { source: "샘플 매체 B", url: "https://example.com/sample-1b" },
+        { source: "샘플 매체 C", url: "https://example.com/sample-1c" },
+      ],
     },
     {
       id: "n2",
-      category: "AI",
-      title: "OpenAI 신모델 벤치마크 공개",
-      url: "https://openai.com/news",
+      title: "[샘플] Coding agent benchmark results",
+      url: "https://example.com/sample-2",
+      source: "샘플 매체 B",
+      publishedAt: "5",
+      topic: "AI 코딩",
+      priority: 1,
+      summary: "코딩 에이전트 벤치마크가 공개됐다는 가상의 소식",
+      relevance: "Herald 의 요약 품질을 어떤 기준으로 볼지 참고가 된다",
     },
     {
       id: "n3",
-      category: "개발",
-      title: "Electron 34 릴리스",
-      url: "https://www.electronjs.org/blog",
-      flagged: true,
-      flagReason: "ClaudeHub 의 node-pty 에 영향 가능",
+      title: "[샘플] Runtime 34 released",
+      url: "https://example.com/sample-3",
+      source: "샘플 매체 C",
+      publishedAt: "9",
+      topic: "개발 도구",
+      priority: 2,
+      summary: "런타임 메이저 버전이 나왔다는 가상의 릴리스 소식",
     },
     {
       id: "n4",
-      category: "개발",
-      title: "Next.js 16 의 proxy 규약 정리",
-      url: "https://nextjs.org/blog",
+      title: "[샘플] Framework routing convention changed",
+      url: "https://example.com/sample-4",
+      source: "샘플 매체 A",
+      publishedAt: "14",
+      topic: "개발 도구",
+      priority: 2,
+      summary: "프레임워크 라우팅 규약이 바뀌었다는 가상의 공지",
     },
     {
       id: "n5",
-      category: "자체호스팅",
-      title: "SQLite 를 프로덕션에서 쓰는 법",
-      url: "https://sqlite.org",
+      title: "[샘플] Running SQLite in production",
+      url: "https://example.com/sample-5",
+      source: "샘플 매체 D",
+      publishedAt: "20",
+      topic: "자체 호스팅",
+      priority: 3,
+      summary: "SQLite 운영 팁을 다룬 가상의 글",
+    },
+    {
+      id: "n6",
+      title: "[샘플] Weekly roundup",
+      url: "https://example.com/sample-6",
+      source: "샘플 매체 D",
+      publishedAt: "26",
+      topic: "기타",
+      priority: 3,
+      summary: "주간 정리 성격의 가상의 글",
     },
   ],
   schedule: [
-    { id: "s1", time: "10:00", title: "치과" },
-    { id: "s2", time: "14:00", title: "팀 미팅" },
+    { id: "s1", time: "10:00", title: "[샘플] 일정" },
+    { id: "s2", time: "14:00", title: "[샘플] 일정" },
   ],
   continues: [
     {
       project: "Herald",
-      yesterday: "리포 초기화와 Next.js·Docker 골격까지",
-      next: "디스코드 웹훅 발송 붙이기",
+      yesterday: "오라클 배포와 HTTPS, 테마·로고까지",
+      next: "RSS 수집 붙이기",
     },
   ],
   launchpad: [

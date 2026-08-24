@@ -32,6 +32,15 @@
   --color-accent: var(--accent);
 }
 
+/*
+ * 로고는 라이트·다크 두 벌을 다 렌더하고 여기서 한쪽만 남긴다.
+ * React 상태로 고르면 첫 페인트에 잘못된 쪽이 스친다 — Logo.tsx 주석 참고.
+ */
+:root[data-theme="dark"] [data-logo="light"],
+:root[data-theme="light"] [data-logo="dark"] {
+  display: none;
+}
+
 html,
 body,
 #root {

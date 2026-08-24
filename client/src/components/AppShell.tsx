@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
 
 /**
@@ -29,7 +30,7 @@ export function AppShell({
       <header className="flex items-center justify-between gap-2 border-b border-border px-4 py-3 sm:px-6">
         {/* 좁은 화면에선 날짜가 줄어들며 버티게 한다 — 브레이크포인트로 끊지 않는다 */}
         <div className="flex min-w-0 items-baseline gap-2">
-          <span className="text-lg leading-none">🐓</span>
+          <Logo className="h-7 w-auto shrink-0" />
           {/* 모바일에선 수탉이 곧 로고다. 글자까지 둘 자리가 없다 */}
           <span className="hidden font-semibold tracking-tight sm:inline">
             Herald

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Logo } from "./components/Logo";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { defaultApiBase, saveConfig, type Config } from "./lib/config";
 
@@ -32,8 +33,8 @@ export function Setup({
         }}
       >
         <div className="flex flex-col items-center gap-2 text-center">
-          <span className="text-4xl leading-none">🐓</span>
-          <h1 className="text-xl font-semibold tracking-tight">Herald</h1>
+          <Logo variant="lockup" className="h-28 w-auto" />
+          <h1 className="sr-only">Herald</h1>
           <p className="text-sm text-muted">
             브리핑을 가져올 서버를 알려주세요.
           </p>

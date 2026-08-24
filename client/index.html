@@ -5,8 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <!-- base: "./" 라 상대 경로로 적는다. Pages 는 /Herald/ 하위에 올라간다 -->
-    <link rel="icon" type="image/png" href="./favicon.png" />
-    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="./favicon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+
+    <!-- 홈화면에 추가했을 때의 이름. 없으면 <title> 전체가 잘려 들어간다 -->
+    <meta name="apple-mobile-web-app-title" content="Herald" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <!-- 주소창·상태바 색. 팔레트의 --background 와 맞춘다 -->
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: light)"
+      content="#f6f6f7"
+    />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: dark)"
+      content="#0b0b0d"
+    />
     <title>Herald</title>
     <script>
       // 번들이 로드되기 전에 테마를 확정한다.

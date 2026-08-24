@@ -1,0 +1,21 @@
+# Herald 리버스 프록시 — HTTPS 종단.
+#
+# 도메인은 리포 루트 .env 의 HERALD_DOMAIN 에서 온다.
+# Caddy 가 Let's Encrypt 인증서를 자동 발급·갱신한다 (80 · 443 이 열려 있어야 한다).
+#
+# ⚠ 서버 컨테이너는 포트를 인터넷에 열지 않는다. 오직 이 프록시를 통해서만 닿는다.
+
+{$HERALD_DOMAIN} {
+	encode zstd gzip
+
+	# 도커 내부 네트워크. web:3000 은 컨테이너 이름이라 외부에서 부를 수 없다.
+	reverse_proxy web:3000
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		# API 전용이라 어떤 프레임에도 들어갈 일이 없다.
+		X-Frame-Options "DENY"
+		-Server
+	}
+}

@@ -1,0 +1,45 @@
+# 자체 호스팅 서버용 (오라클 · VPS · 라즈베리파이).
+# 로컬 개발은 docker-compose.yml 을 쓴다 — 이 파일은 그것의 오버라이드가 아니라 독립 구성이다.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# 로컬과 다른 점 하나: 앱 포트를 인터넷에 열지 않는다.
+# 바깥으로 나가는 것은 Caddy 의 80 · 443 뿐이고, 앱은 도커 내부 네트워크에만 있다.
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: herald:prod
+    container_name: herald
+    expose:
+      - "3000"
+    env_file:
+      - path: server/.env
+        required: false
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: herald-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # 리포 루트 .env 에서 읽는다. 없으면 Caddy 가 뜨지 않는다 — 의도된 동작이다.
+      - HERALD_DOMAIN=${HERALD_DOMAIN:?HERALD_DOMAIN 을 .env 에 설정해야 한다}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # ⚠ 발급받은 인증서가 여기 산다. 지우면 재발급이 돌고, Let's Encrypt 는
+      #   주당 횟수 제한이 있어 반복하면 몇 시간~며칠 막힌다.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

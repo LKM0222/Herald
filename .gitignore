@@ -26,3 +26,8 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 *.tmp
+
+# next dev 와 next build 가 서로 다른 내용을 써서 매번 뒤집힌다
+# (.next/dev/types vs .next/types). Next 가 두 명령 모두에서 자동 생성하므로
+# 추적하지 않는다.
+next-env.d.ts

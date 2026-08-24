@@ -63,9 +63,27 @@ npm run dev
 ## 배포
 
 - **화면** — `main` 에 푸시하면 GitHub Actions 가 `client/` 를 빌드해 GitHub Pages 로 올린다
-- **서버** — `docker compose up -d --build`. 어디든(오라클·VPS·라즈베리파이) 같은 명령이다
+  → https://lkm0222.github.io/Herald/
+- **서버** — 오라클 무료 티어 (Ubuntu 24.04 · x86 1 OCPU / 1GB)
+  → https://lkm0222.duckdns.org
 
-서버 주소가 정해지면 그 오리진을 `ALLOWED_ORIGINS` 에 넣어야 화면이 데이터를 받을 수 있다.
+```bash
+cp deploy/.env.example .env        # HERALD_DOMAIN 을 채운다
+vi server/.env                     # API_TOKEN · ALLOWED_ORIGINS
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+로컬용 `docker-compose.yml` 과 갈라져 있다. **서버는 앱 포트를 인터넷에 열지 않는다** —
+Caddy 만 80·443 을 내보내고 인증서를 자동 발급·갱신한다.
+
+배포처에서는 방화벽 **두 겹**을 열어야 한다. 하나만 열면 원인이 안 보이는 채로 막힌다:
+
+1. 클라우드 방화벽 — 오라클은 VCN → **Security Lists** → Ingress (80·443/TCP).
+   Route Rules 가 아니다
+2. 서버 안 `iptables` — Ubuntu 이미지엔 22 외 전부 막는 REJECT 규칙이 들어 있다
+
+`ALLOWED_ORIGINS` 에 화면의 오리진(`https://lkm0222.github.io`)이 없으면
+서버가 200 을 줘도 브라우저가 응답을 버린다.
 
 ## 스택
 

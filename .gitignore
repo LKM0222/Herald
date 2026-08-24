@@ -1,0 +1,28 @@
+# ─── 시크릿 · 절대 커밋 금지 ───────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+
+# 핸들러 로컬 실행 정책 — 내 PC의 실제 앱 경로가 드러난다.
+# policy.example.json 만 커밋한다.
+policy.json
+
+# ─── 데이터 ────────────────────────────────────────────────
+data/
+
+# ─── 의존성 · 빌드 산출물 ──────────────────────────────────
+node_modules/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+
+# ─── 로그 · 임시 ───────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db
+*.tmp

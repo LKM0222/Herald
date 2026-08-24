@@ -1,0 +1,18 @@
+# 빌드 컨텍스트로 보내지 않을 것.
+# node_modules 를 빼지 않으면 수백 MB를 매번 전송하게 된다.
+**/node_modules
+**/.next
+**/dist
+**/build
+
+.git
+.gitignore
+
+data
+*.log
+
+.env
+.env.*
+!.env.example
+
+policy.json

@@ -1,0 +1,18 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: herald:dev
+    container_name: herald
+    ports:
+      # 이 PC엔 이미 3000을 쓰는 다른 서비스가 있다. 충돌하면 HERALD_PORT 로 바꾼다.
+      - "${HERALD_PORT:-3100}:3000"
+    env_file:
+      # .env 가 아직 없어도 뜨게 한다. 골격 단계에선 필수 값이 없다.
+      - path: .env
+        required: false
+    volumes:
+      # SQLite 파일. 백업은 이 폴더를 복사하면 끝난다.
+      - ./data:/data
+    restart: unless-stopped

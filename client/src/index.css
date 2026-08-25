@@ -197,3 +197,97 @@ body {
   background: var(--accent-700);
   background-clip: content-box;
 }
+
+/*
+ * ─── 뉴스 탭: 층 하나가 화면 하나 ────────────────────────────────
+ *
+ * 도면 5A 가 바뀌었다. 세 층(01 먼저 볼 것 · 02 훑어볼 것 · 03 참고)이
+ * 죽 이어지던 걸, 층마다 화면을 통째로 차지하고 스크롤하면 다음 층으로
+ * 딱 끊어 넘어가게 했다.
+ *
+ * ⚠ 스냅은 **실제로 구르는 요소**에 걸어야 한다. 그런데 이 앱은 폭에 따라
+ *   구르는 놈이 바뀐다 — md 이상은 <main>(app-shell-frame 이 문서를 묶어둔다),
+ *   md 미만은 문서 자체다. 그래서 두 군데에 다 건다. 각 폭에서 한쪽은
+ *   overflow 가 visible 이라 아무 일도 안 일어난다.
+ *
+ * ⚠ 뉴스 탭에서만 켠다. 홈의 가로 캐러셀 카드에도 snap-start 가 붙어 있는데,
+ *   scroll-snap-align 은 가로·세로를 한꺼번에 정하는 속성이라 문서에 세로
+ *   스냅을 상시로 걸면 홈에서 카드마다 세로로 걸려 버린다.
+ *   표시(.news-snap)는 News.tsx 가 <html> 에 달았다 뗀다.
+ */
+html.news-snap,
+.news-snap main[data-scrollarea] {
+  scroll-snap-type: y mandatory;
+}
+
+/*
+ * 하단 탭바가 실제로 덮는 높이 — TabItem 의 min-h-14(56px) + nav 의 border-t 1px.
+ * ⚠ 56 으로 적으면 마지막 칸 바닥 1px 이 탭바 뒤로 들어간다. 눈에는 잘 안 띄지만
+ *   스크롤 끝과 마지막 스냅 지점이 어긋나서 끝에서 미세하게 튕긴다.
+ */
+:root {
+  --news-tabbar: 57px;
+}
+
+.news-panel {
+  box-sizing: border-box;
+  scroll-snap-align: start;
+  /*
+   * 한 번 굴려 한 칸. 도면엔 없지만 층이 셋뿐이라, 세게 튕겼을 때 가운데
+   * 층을 건너뛰면 "훑어볼 것" 을 통째로 못 보고 지나간다.
+   */
+  scroll-snap-stop: always;
+  /*
+   * 모바일 — 문서가 구르고 하단 탭바가 화면을 덮는다. 탭바 몫을 빼야
+   * 칸 바닥이 탭바 위에 딱 선다. (탭바는 md 부터 사라진다)
+   */
+  min-height: calc(100dvh - var(--news-tabbar));
+}
+
+/*
+ * PC — 구르는 건 <main> 이고 그 높이는 뷰포트에서 헤더를 뺀 값이다.
+ * 100dvh 로 재면 헤더 높이만큼 넘쳐 칸마다 조금씩 잘린다. 그래서 퍼센트로
+ * 받는다 — News.tsx 의 뿌리에 md:h-full 이 붙어 있어야 이 100% 가 풀린다.
+ */
+@media (min-width: 768px) {
+  .news-panel {
+    min-height: 100%;
+  }
+}
+
+/*
+ * 스냅해 들어올 때 살짝 떠오르며 짙어진다 (도면의 tierIn).
+ * 시간이 아니라 **스크롤 위치**가 진행도라, 손가락을 멈추면 애니메이션도
+ * 멈춘다 — 스냅과 따로 노는 느낌이 없다.
+ *
+ * @supports 로 감싼 이유: animation-timeline 을 모르는 브라우저는 그 줄만
+ * 버리고 `animation: tierIn ... both` 는 남긴다. 그러면 진행도를 줄 것이
+ * 없어 첫 프레임(opacity .25)에 붙박여 글이 흐릿한 채로 남는다.
+ */
+@supports (animation-timeline: view()) {
+  .news-panel {
+    animation: tierIn linear both;
+    /* ⚠ animation 단축 속성이 animation-timeline 을 auto 로 되돌린다.
+       반드시 뒤에 와야 한다. */
+    animation-timeline: view();
+    animation-range: entry 5% cover 32%;
+  }
+}
+
+@keyframes tierIn {
+  from {
+    opacity: 0.25;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 움직임을 덜 보고 싶다는 사람에겐 위치만 바뀌고 끝난다 */
+@media (prefers-reduced-motion: reduce) {
+  .news-panel {
+    animation: none;
+  }
+}

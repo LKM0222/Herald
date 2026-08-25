@@ -90,7 +90,18 @@ export function AppShell({
         */}
         <main
           data-scrollarea
-          className="min-w-0 flex-1 px-4 pb-24 pt-5 sm:px-6 md:flex md:min-h-0 md:overflow-y-auto md:pb-10"
+          className={`min-w-0 flex-1 px-4 sm:px-6 md:flex md:min-h-0 md:overflow-y-auto ${
+            view === "news"
+              ? /*
+                   뉴스 탭만 예외다. 층마다 화면을 통째로 차지하며 스냅하는데
+                   (News.tsx), 위아래 여백이 여기 있으면 스냅 지점이 그만큼
+                   밀려 칸이 화면에 딱 맞지 않는다 — 여백은 칸이 각자 든다.
+                   ⚠ 아래쪽 탭바 몫은 남긴다. 0 으로 두면 스크롤이 마지막 칸의
+                     스냅 지점까지 닿지 못해 그 칸이 탭바 뒤에 깔린 채 멈춘다.
+                */
+                "pb-[var(--news-tabbar)] md:pb-0"
+              : "pb-24 pt-5 md:pb-10"
+          }`}
         >
           {children}
         </main>

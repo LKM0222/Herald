@@ -179,12 +179,21 @@ function useDragScroll(ref: RefObject<HTMLDivElement | null>) {
 export function SnapCarousel({
   count,
   label,
+  fill = false,
   children,
 }: {
   /** 카드 수. 점 개수이자 "넘길 게 있는지" 판단 근거다 */
   count: number;
   /** 점 버튼을 읽어줄 이름 */
   label: (index: number) => string;
+  /**
+   * 남은 높이를 트랙이 다 먹고 카드도 거기 맞춰 늘어난다.
+   *
+   * 뉴스 탭에서만 켠다 — 거기선 캐러셀이 화면 한 칸을 통째로 채워야 해서
+   * (도면 5A), 카드가 제 내용 높이로 서면 아래가 휑하게 빈다.
+   * 홈은 카드가 다른 구획들과 세로로 이어지는 자리라 내용 높이가 맞다.
+   */
+  fill?: boolean;
   children: ReactNode;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
@@ -208,13 +217,17 @@ export function SnapCarousel({
         className={`relative -mx-1 flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
           // 넘길 게 없으면 잡히는 척하지 않는다
           count > 1 ? "cursor-grab" : ""
+        } ${
+          // min-h-0 이 없으면 flex 자식은 제 내용 높이 밑으로 못 줄어들어
+          // flex-1 을 줘도 부모를 넘겨 버린다.
+          fill ? "min-h-0 flex-1 items-stretch overflow-y-hidden" : ""
         }`}
       >
         {children}
       </div>
 
       {count > 1 ? (
-        <div className="flex justify-center gap-2">
+        <div className="flex shrink-0 justify-center gap-2">
           {Array.from({ length: count }, (_, index) => (
             <button
               key={index}

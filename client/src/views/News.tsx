@@ -1,3 +1,4 @@
+import { useEffect, type ReactNode } from "react";
 import { formatRelative } from "@shared/date";
 import type { Briefing, NewsItem, Priority } from "@shared/types";
 import { Bookmark, ChevronDown, ExternalLink, Search } from "lucide-react";
@@ -18,6 +19,25 @@ const TIERS: { priority: Priority; no: string; label: string }[] = [
   { priority: 3, no: "03", label: "참고" },
 ];
 
+/**
+ * 세로 스냅을 켜는 표시를 `<html>` 에 달았다 뗀다.
+ *
+ * 스냅은 **구르는 요소**에 걸어야 하는데 이 앱은 폭에 따라 구르는 놈이
+ * 바뀐다 — md 이상은 `<main>`, 그 아래는 문서 자체다(index.css 의
+ * app-shell-frame 주석). JSX 로는 `<html>` 에 손이 닿지 않아 여기서 단다.
+ *
+ * 뉴스 탭에서만 켜는 이유: scroll-snap-align 은 가로·세로를 한꺼번에 정하는
+ * 속성이라, 문서에 세로 스냅을 상시로 걸면 홈의 가로 캐러셀 카드(snap-start)가
+ * 세로로도 걸려 홈 스크롤이 카드마다 끊긴다.
+ */
+function useVerticalSnap() {
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("news-snap");
+    return () => root.classList.remove("news-snap");
+  }, []);
+}
+
 export function News({
   briefing,
   date,
@@ -27,6 +47,8 @@ export function News({
   date: string;
   today: string;
 }) {
+  useVerticalSnap();
+
   // priority 가 없는 항목(수집만 되고 요약 전)은 맨 아래 층으로 보낸다.
   const byTier = TIERS.map((tier) => ({
     ...tier,
@@ -36,25 +58,40 @@ export function News({
   }));
   const filled = byTier.filter((tier) => tier.items.length > 0);
 
-  return (
-    <div className="flex flex-col gap-8">
-      <TierBar
-        total={briefing.news.length}
-        tiers={byTier}
-        date={date}
-        today={today}
-      />
+  const tierBar = (
+    <TierBar
+      total={briefing.news.length}
+      tiers={byTier}
+      date={date}
+      today={today}
+    />
+  );
 
+  return (
+    /*
+     * md:h-full — PC 에서 칸 높이(.news-panel 의 min-height:100%)가 풀리려면
+     * 이 뿌리가 확정된 높이를 들고 있어야 한다. 퍼센트는 "높이가 정해진 조상"
+     * 을 찾아 올라가는데, 여기서 auto 로 끊기면 칸이 내용 높이로 주저앉아
+     * 스냅이 통째로 무너진다.
+     */
+    <div className="flex w-full min-w-0 flex-col md:h-full">
       {briefing.news.length === 0 ? (
-        <p className="rounded-2xl border border-line bg-surface p-6 text-sm text-dim">
-          오늘 모인 기사가 없습니다.
-        </p>
+        <SnapPanel first>
+          {tierBar}
+          <p className="rounded-2xl border border-line bg-surface p-6 text-sm text-dim">
+            오늘 모인 기사가 없습니다.
+          </p>
+        </SnapPanel>
       ) : (
-        filled.map((tier) => (
-          <section key={tier.priority} className="flex flex-col gap-3.5">
+        filled.map((tier, order) => (
+          <SnapPanel key={tier.priority} first={order === 0}>
+            {/* 오늘의 부피는 첫 칸 위에만 한 번 선다 — 칸마다 이고 있으면
+                정작 기사보다 머리글이 먼저 읽힌다 */}
+            {order === 0 ? tierBar : null}
+
             {tier.priority === 3 ? null : (
               <h3
-                className={`font-display text-sm uppercase tracking-[0.1em] ${
+                className={`shrink-0 font-display text-sm uppercase tracking-[0.1em] ${
                   tier.priority === 1 ? "text-accent" : "text-dim"
                 }`}
               >
@@ -67,8 +104,12 @@ export function News({
                 1층은 좌우로 넘긴다(도면 5A). 두 장을 나란히 세우면 서로
                 크기를 깎아먹어 "먼저 볼 것" 이 먼저로 안 읽힌다.
                 넘기는 동작은 홈과 같은 SnapCarousel 을 쓴다.
+
+                fill — 이 칸은 화면을 통째로 차지한다. 카드가 제 내용 높이로
+                서면 아래가 휑하게 남아 "가득 찬 한 화면" 이 안 된다.
               */
               <SnapCarousel
+                fill
                 count={tier.items.length}
                 label={(index) => `먼저 볼 것 ${index + 1}번째`}
               >
@@ -86,10 +127,43 @@ export function News({
             ) : (
               <ReferenceFold tier={tier} />
             )}
-          </section>
+          </SnapPanel>
         ))
       )}
     </div>
+  );
+}
+
+/**
+ * 스냅 한 칸 = 층 하나.
+ *
+ * 원래 세 층이 죽 이어져 있어서, 스크롤을 멈춘 자리가 어느 층인지 매번 다시
+ * 찾아야 했다. 이제 한 층이 화면을 통째로 차지하고 다음 층은 한 번 굴리면
+ * 딱 끊어 들어온다 — 어디까지 봤는지가 스크롤 위치가 아니라 화면 자체로 남는다.
+ *
+ * 실제로 걸리는 규칙(높이 · 스냅 · 떠오르는 애니메이션)은 index.css 의
+ * `.news-panel` 에 있다. 위아래 여백만 여기서 준다 — 좌우는 AppShell 의
+ * `<main>` 이 이미 대고 있어서 여기서 또 대면 두 겹이 된다.
+ *
+ * ⚠ shrink-0 — 이 칸들은 세로 flex 자식이다. 없으면 형제 칸에 눌려
+ *   min-height 아래로 찌그러지고, 그 순간 "한 칸 = 한 화면" 이 깨진다.
+ */
+function SnapPanel({
+  first = false,
+  children,
+}: {
+  /** 첫 칸은 위 여백을 조금 줄인다 — 머리글이 화면 꼭대기에 붙어 보이게 */
+  first?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      className={`news-panel flex shrink-0 flex-col ${
+        first ? "gap-5 pb-6 pt-5" : "justify-center gap-3.5 py-6"
+      }`}
+    >
+      {children}
+    </section>
   );
 }
 
@@ -106,7 +180,7 @@ function TierBar({
   today: string;
 }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-4 border-b border-line pb-3">
+    <div className="flex shrink-0 flex-wrap items-end justify-between gap-4 border-b border-line pb-3">
       <div className="flex flex-col gap-1">
         <Kicker>오늘 볼 것</Kicker>
         <span className="font-display text-2xl sm:text-[26px]">

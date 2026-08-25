@@ -1,3 +1,12 @@
+import {
+  Archive,
+  House,
+  Newspaper,
+  Repeat,
+  Settings as SettingsIcon,
+  type LucideIcon,
+} from "lucide-react";
+
 /**
  * 탭 정의는 한 곳에만 둔다 — PC 사이드바와 모바일 하단바가 같은 배열을 읽는다.
  * 두 벌로 두면 한쪽만 고쳐서 어긋난다.
@@ -6,18 +15,18 @@ export type ViewId = "home" | "news" | "archive" | "routines" | "settings";
 
 export type ViewDef = {
   id: ViewId;
-  icon: string;
+  Icon: LucideIcon;
   label: string;
-  /** 아직 안 만든 화면. 되는 척하지 않고 안내만 띄운다 */
+  /** 아직 안 만든 화면. 되는 척하지 않고 "준비 중"으로 표시한다 */
   ready: boolean;
 };
 
 export const VIEWS: ViewDef[] = [
-  { id: "home", icon: "🏠", label: "홈", ready: true },
-  { id: "news", icon: "📰", label: "뉴스", ready: true },
-  { id: "archive", icon: "🗂", label: "지난 기록", ready: false },
-  { id: "routines", icon: "🔁", label: "루틴", ready: false },
-  { id: "settings", icon: "⚙", label: "설정", ready: true },
+  { id: "home", Icon: House, label: "홈", ready: true },
+  { id: "news", Icon: Newspaper, label: "뉴스", ready: true },
+  { id: "archive", Icon: Archive, label: "지난 기록", ready: false },
+  { id: "routines", Icon: Repeat, label: "루틴", ready: false },
+  { id: "settings", Icon: SettingsIcon, label: "설정", ready: true },
 ];
 
 /**

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { formatKoreanDate, isISODate, todayISO } from "@shared/date";
 import { AppShell } from "./components/AppShell";
-import { Card } from "./components/Card";
+import { Button, LinkButton } from "./components/ui";
 import { Setup } from "./Setup";
 import { Home } from "./views/Home";
 import { News } from "./views/News";
@@ -61,8 +61,20 @@ export default function App() {
     );
   }
 
+  const briefing = result?.kind === "ok" ? result.briefing : null;
+
   return (
-    <AppShell view={view} dateLabel={formatKoreanDate(date)} date={date === today ? undefined : date}>
+    <AppShell
+      view={view}
+      dateLabel={formatKoreanDate(date)}
+      note={
+        briefing?.generatedAt
+          ? `${briefing.generatedAt} 에 정리했어요`
+          : undefined
+      }
+      sample={briefing?.sample}
+      date={date === today ? undefined : date}
+    >
       {view === "settings" ? (
         <Settings
           config={config}
@@ -97,51 +109,30 @@ function BriefingView({
   onReconnect: () => void;
 }) {
   if (result === null) {
-    return (
-      <Card title="⏳ 불러오는 중">
-        <p className="text-sm text-muted">서버에서 브리핑을 가져오고 있습니다.</p>
-      </Card>
-    );
+    return <Status title="불러오는 중이에요">서버에서 브리핑을 가져오고 있어요.</Status>;
   }
 
   if (result.kind === "unreachable") {
     return (
-      <Card title="🔌 서버에 닿지 않음">
-        <div className="flex flex-col items-start gap-3">
-          <p className="text-sm">브리핑을 가져올 서버에 연결하지 못했습니다.</p>
-          <p className="text-xs text-muted">
-            서버가 꺼져 있거나, 주소가 틀렸거나, 서버의 ALLOWED_ORIGINS 에 이
-            주소가 없을 수 있습니다. ({result.message})
-          </p>
-          <button
-            type="button"
-            onClick={onReconnect}
-            className="min-h-11 rounded-lg border border-border px-3 text-sm hover:border-accent hover:text-accent"
-          >
-            연결 다시 설정
-          </button>
-        </div>
-      </Card>
+      <Status
+        title="서버에 닿지 않아요"
+        detail={`서버가 꺼져 있거나, 주소가 틀렸거나, 서버의 ALLOWED_ORIGINS 에 이 주소가 없을 수 있어요. (${result.message})`}
+        action={<Button onClick={onReconnect}>연결 다시 설정</Button>}
+      >
+        브리핑을 가져올 서버에 연결하지 못했어요.
+      </Status>
     );
   }
 
   if (result.kind === "unauthorized") {
     return (
-      <Card title="🔑 인증되지 않음">
-        <div className="flex flex-col items-start gap-3">
-          <p className="text-sm">서버가 이 연결을 거부했습니다.</p>
-          <p className="text-xs text-muted">
-            로그인이 만료됐거나 비밀번호·토큰이 바뀌었을 수 있습니다.
-          </p>
-          <button
-            type="button"
-            onClick={onReconnect}
-            className="min-h-11 rounded-lg border border-border px-3 text-sm hover:border-accent hover:text-accent"
-          >
-            다시 연결
-          </button>
-        </div>
-      </Card>
+      <Status
+        title="인증되지 않았어요"
+        detail="로그인이 만료됐거나 비밀번호·토큰이 바뀌었을 수 있어요."
+        action={<Button onClick={onReconnect}>다시 연결</Button>}
+      >
+        서버가 이 연결을 거부했어요.
+      </Status>
     );
   }
 
@@ -150,24 +141,17 @@ function BriefingView({
   // 데이터가 없는 날. 아직 수집이 안 붙어서 대부분의 날짜가 여기로 온다.
   if (!briefing) {
     return (
-      <Card title="📭 브리핑 없음">
-        <div className="flex flex-col items-start gap-3">
-          <p className="text-sm">
-            {formatKoreanDate(date)} 에는 아직 브리핑이 없습니다.
-          </p>
-          <p className="text-xs text-muted">
-            수집과 요약은 다음 단계에서 붙습니다.
-          </p>
-          {date !== today ? (
-            <a
-              href={hrefFor(view, today)}
-              className="inline-flex min-h-11 items-center rounded-lg border border-border px-3 text-sm hover:border-accent hover:text-accent"
-            >
-              오늘로 가기 →
-            </a>
-          ) : null}
-        </div>
-      </Card>
+      <Status
+        title="브리핑이 없어요"
+        detail="수집과 요약은 다음 단계에서 붙어요."
+        action={
+          date !== today ? (
+            <LinkButton href={hrefFor(view, today)}>오늘로 가기 →</LinkButton>
+          ) : undefined
+        }
+      >
+        {formatKoreanDate(date)} 에는 아직 브리핑이 없어요.
+      </Status>
     );
   }
 
@@ -175,5 +159,26 @@ function BriefingView({
     <News briefing={briefing} date={date} today={today} />
   ) : (
     <Home briefing={briefing} date={date === today ? undefined : date} />
+  );
+}
+
+function Status({
+  title,
+  detail,
+  action,
+  children,
+}: {
+  title: string;
+  detail?: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex max-w-lg flex-col items-start gap-3 rounded-2xl border border-line bg-surface p-6">
+      <h2 className="font-display text-xl">{title}</h2>
+      <p className="text-sm">{children}</p>
+      {detail ? <p className="text-xs leading-relaxed text-dim">{detail}</p> : null}
+      {action}
+    </div>
   );
 }

@@ -1,17 +1,21 @@
 import { useEffect, useState } from "react";
+import { Monitor, Moon, Sun } from "lucide-react";
 import {
   applyTheme,
   loadTheme,
   saveTheme,
-  THEME_OPTIONS,
   watchSystemTheme,
   type Theme,
 } from "../lib/theme";
 
+const OPTIONS = [
+  { id: "light", label: "라이트", Icon: Sun },
+  { id: "dark", label: "다크", Icon: Moon },
+  { id: "system", label: "시스템", Icon: Monitor },
+] as const satisfies readonly { id: Theme; label: string; Icon: unknown }[];
+
 /**
- * 상태를 자기 안에 들고 있다.
- * 이 컴포넌트는 Setup 화면과 AppShell 헤더 중 한 곳에만 나타나고
- * (둘은 동시에 렌더되지 않는다) 실제 반영은 DOM 속성이라,
+ * 상태를 자기 안에 들고 있다. 실제 반영은 DOM 속성이라
  * 최상단까지 끌어올려 내려꽂을 이유가 없다.
  */
 export function ThemeToggle() {
@@ -27,30 +31,32 @@ export function ThemeToggle() {
   return (
     <div
       role="radiogroup"
-      aria-label="화면 테마"
-      className="flex shrink-0 rounded-lg border border-border p-0.5"
+      aria-label="화면 밝기"
+      className="flex shrink-0 overflow-hidden rounded-full border border-line"
     >
-      {THEME_OPTIONS.map((option) => {
-        const selected = theme === option.id;
+      {OPTIONS.map(({ id, label, Icon }, index) => {
+        const selected = theme === id;
         return (
           <button
-            key={option.id}
+            key={id}
             type="button"
             role="radio"
             aria-checked={selected}
-            aria-label={option.label}
-            title={option.label}
+            aria-label={label}
+            title={label}
             onClick={() => {
-              setTheme(option.id);
-              saveTheme(option.id);
+              setTheme(id);
+              saveTheme(id);
             }}
-            className={`flex h-10 w-10 items-center justify-center rounded-md text-sm transition-colors ${
+            className={`flex h-10 w-11 items-center justify-center transition-colors ${
+              index > 0 ? "border-l border-line" : ""
+            } ${
               selected
-                ? "bg-accent/15 text-accent"
-                : "text-muted hover:text-foreground"
+                ? "bg-accent text-bg"
+                : "text-dim hover:bg-fg/[0.07] hover:text-fg"
             }`}
           >
-            <span aria-hidden="true">{option.icon}</span>
+            <Icon size={16} strokeWidth={1.5} aria-hidden="true" />
           </button>
         );
       })}

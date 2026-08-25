@@ -1,8 +1,8 @@
 import {
   Archive,
+  CalendarDays,
   House,
   Newspaper,
-  Repeat,
   Settings as SettingsIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -11,7 +11,7 @@ import {
  * 탭 정의는 한 곳에만 둔다 — PC 사이드바와 모바일 하단바가 같은 배열을 읽는다.
  * 두 벌로 두면 한쪽만 고쳐서 어긋난다.
  */
-export type ViewId = "home" | "news" | "archive" | "routines" | "settings";
+export type ViewId = "home" | "news" | "archive" | "schedule" | "settings";
 
 export type ViewDef = {
   id: ViewId;
@@ -25,7 +25,7 @@ export const VIEWS: ViewDef[] = [
   { id: "home", Icon: House, label: "홈", ready: true },
   { id: "news", Icon: Newspaper, label: "뉴스", ready: true },
   { id: "archive", Icon: Archive, label: "지난 기록", ready: false },
-  { id: "routines", Icon: Repeat, label: "루틴", ready: false },
+  { id: "schedule", Icon: CalendarDays, label: "일정", ready: true },
   { id: "settings", Icon: SettingsIcon, label: "설정", ready: true },
 ];
 
@@ -37,7 +37,7 @@ export const MOBILE_ORDER: ViewId[] = [
   "news",
   "archive",
   "home",
-  "routines",
+  "schedule",
   "settings",
 ];
 

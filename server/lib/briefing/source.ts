@@ -1,4 +1,4 @@
-import { todayISO } from "@shared/date";
+import { shiftISO, todayISO, weekdayIndex } from "@shared/date";
 import type { Briefing } from "@shared/types";
 
 /**
@@ -10,7 +10,13 @@ import type { Briefing } from "@shared/types";
  */
 export async function getBriefing(date: string): Promise<Briefing | null> {
   if (date !== todayISO()) return null;
-  return { ...SAMPLE, date, news: SAMPLE.news.map(withFreshTime) };
+  return {
+    ...SAMPLE,
+    date,
+    news: SAMPLE.news.map(withFreshTime),
+    week: sampleWeek(date),
+    upcoming: sampleUpcoming(date),
+  };
 }
 
 /**
@@ -26,12 +32,36 @@ function withFreshTime<T extends { publishedAt: string }>(item: T): T {
 }
 
 /**
- * ⚠ 전부 가짜다. 실제 기사가 아니다.
- *
- * 화면 형태를 잡기 위한 것이므로 `sample: true` 로 표시해서
- * 화면이 "샘플"이라고 말하게 한다 — 진짜 브리핑으로 오해되면 안 된다.
- * `publishedAt` 은 "몇 시간 전"을 뜻하는 숫자이고 위에서 실제 시각으로 바뀐다.
+ * 이번 주 일곱 칸. 월요일부터 시작한다.
+ * 캘린더가 붙으면 이 함수가 실제 조회로 바뀐다.
  */
+function sampleWeek(date: string): Briefing["week"] {
+  const monday = shiftISO(date, -weekdayIndex(date));
+  return Array.from({ length: 7 }, (_, index) => {
+    const day = shiftISO(monday, index);
+    return { date: day, count: day === date ? 2 : 0 };
+  });
+}
+
+function sampleUpcoming(date: string): Briefing["upcoming"] {
+  return [
+    {
+      id: "u1",
+      date: shiftISO(date, 1),
+      time: "11:00",
+      endTime: "12:00",
+      title: "[샘플] 일정",
+    },
+    {
+      id: "u2",
+      date: shiftISO(date, 3),
+      time: "",
+      title: "[샘플] 종일 일정",
+      allDay: true,
+    },
+  ];
+}
+
 const SAMPLE: Briefing = {
   date: "",
   sample: true,
@@ -106,9 +136,12 @@ const SAMPLE: Briefing = {
     },
   ],
   schedule: [
-    { id: "s1", time: "10:00", title: "[샘플] 일정" },
-    { id: "s2", time: "14:00", title: "[샘플] 일정" },
+    { id: "s1", time: "10:00", endTime: "11:00", title: "[샘플] 일정" },
+    { id: "s2", time: "14:00", endTime: "15:00", title: "[샘플] 일정" },
   ],
+  // 아래 둘은 getBriefing 이 날짜에 맞춰 다시 채운다.
+  upcoming: [],
+  week: [],
   continues: [
     {
       project: "Herald",

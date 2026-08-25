@@ -34,9 +34,26 @@ export type NewsItem = {
 
 export type ScheduleItem = {
   id: string;
-  /** "10:00" */
+  /** "10:00". 종일 일정이면 빈 문자열 */
   time: string;
+  /** "11:00". 없으면 시작 시각만 보여준다 */
+  endTime?: string;
   title: string;
+  allDay?: boolean;
+};
+
+/** 오늘 이후의 일정. 일정 탭의 "다음 7일" 이 쓴다. */
+export type UpcomingItem = ScheduleItem & {
+  /** YYYY-MM-DD */
+  date: string;
+};
+
+/** 일정 탭의 주간 띠 한 칸. */
+export type WeekDay = {
+  /** YYYY-MM-DD */
+  date: string;
+  /** 그날 일정 수. 점 개수로 그린다 */
+  count: number;
 };
 
 export type ContinueItem = {
@@ -67,6 +84,10 @@ export type Briefing = {
   headline: string;
   news: NewsItem[];
   schedule: ScheduleItem[];
+  /** 다음 7일. 캘린더가 안 붙었으면 빈 배열 */
+  upcoming: UpcomingItem[];
+  /** 이번 주 일곱 칸. 캘린더가 안 붙었으면 빈 배열 */
+  week: WeekDay[];
   continues: ContinueItem[];
   launchpad: LaunchItem[];
 };
@@ -75,8 +96,10 @@ export type Briefing = {
  * 화면에서 넣는 자격증명의 상태.
  * ⚠ 값 자체는 절대 이 타입에 담기지 않는다 — 서버가 돌려주지 않는다.
  */
+export type SecretName = "anthropic" | "naver_id" | "naver_password";
+
 export type SecretStatus = {
-  name: "anthropic";
+  name: SecretName;
   label: string;
   set: boolean;
   /** 끝 네 자리. 맞는 키를 넣었는지 눈으로 대조하는 용도 */

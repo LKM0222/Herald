@@ -44,3 +44,22 @@ export function formatRelative(iso: string, now: Date = new Date()): string {
   const days = Math.round(hours / 24);
   return days === 1 ? "어제" : `${days}일 전`;
 }
+
+/**
+ * 날짜 문자열 산술.
+ *
+ * Date 객체로 더하고 toISOString() 으로 되돌리면 UTC 변환에서 하루가 밀린다 —
+ * 서울(+09)의 자정은 UTC 로 전날 15시다.
+ * 그래서 날짜 문자열을 **UTC 자정으로 읽고 UTC 로만** 다룬다. 시간대가 개입할
+ * 여지를 없애는 것이지 UTC 로 바꾸는 게 아니다.
+ */
+export function shiftISO(date: string, days: number): string {
+  const point = new Date(`${date}T00:00:00Z`);
+  point.setUTCDate(point.getUTCDate() + days);
+  return point.toISOString().slice(0, 10);
+}
+
+/** 월요일이 0, 일요일이 6. 주를 월요일로 시작하려고 옮긴 값이다. */
+export function weekdayIndex(date: string): number {
+  return (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7;
+}

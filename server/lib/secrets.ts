@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { SecretStatus } from "@shared/types";
+import type { SecretName, SecretStatus } from "@shared/types";
 import { decrypt, encrypt, hasEncryptionKey } from "./crypto";
 
 /**
@@ -13,12 +13,17 @@ import { decrypt, encrypt, hasEncryptionKey } from "./crypto";
 const DATA_DIR = process.env.HERALD_DATA_DIR ?? "/data";
 const FILE = path.join(DATA_DIR, "secrets.json");
 
-export type SecretName = SecretStatus["name"];
-export type { SecretStatus };
+export type { SecretName, SecretStatus };
 
-/** 값이 형식에 맞는지 — 붙여넣기 사고를 여기서 잡는다. */
-const RULES: Record<SecretName, { prefix: string; label: string }> = {
+/**
+ * prefix 가 있으면 붙여넣기 사고를 여기서 잡는다.
+ * 네이버 앱 비밀번호는 정해진 모양이 없어서 검사하지 않는다 —
+ * 형식을 지어내 막으면 멀쩡한 값을 거부하게 된다.
+ */
+const RULES: Record<SecretName, { prefix?: string; label: string }> = {
   anthropic: { prefix: "sk-ant-", label: "Anthropic API 키" },
+  naver_id: { label: "네이버 아이디" },
+  naver_password: { label: "네이버 앱 비밀번호" },
 };
 
 type Stored = Partial<Record<SecretName, { value: string; updatedAt: string }>>;
@@ -35,6 +40,8 @@ function read(): Stored {
 
 const ENV_FALLBACK: Record<SecretName, string> = {
   anthropic: "ANTHROPIC_API_KEY",
+  naver_id: "NAVER_ID",
+  naver_password: "NAVER_APP_PASSWORD",
 };
 
 /**
@@ -62,7 +69,7 @@ export function statusOf(name: SecretName): SecretStatus {
         name,
         label,
         set: true,
-        tail: plain.slice(-4),
+        tail: hint(name, plain),
         updatedAt: entry.updatedAt,
       };
     }
@@ -70,9 +77,18 @@ export function statusOf(name: SecretName): SecretStatus {
 
   const fromEnv = process.env[ENV_FALLBACK[name]];
   if (fromEnv) {
-    return { name, label, set: true, tail: fromEnv.slice(-4), fromEnv: true };
+    return { name, label, set: true, tail: hint(name, fromEnv), fromEnv: true };
   }
   return { name, label, set: false };
+}
+
+/**
+ * 화면에 보여줄 힌트.
+ * 비밀은 끝 네 자리만, 아이디는 통째로 — 아이디는 숨길 값이 아니고
+ * 끝 네 자리만 보여주면 어느 계정인지 알 수가 없다.
+ */
+function hint(name: SecretName, plain: string): string {
+  return name === "naver_id" ? plain : plain.slice(-4);
 }
 
 export type SaveResult =
@@ -84,7 +100,8 @@ export function setSecret(name: SecretName, value: string): SaveResult {
   if (!hasEncryptionKey()) return { ok: false, error: "no_encryption_key" };
 
   const trimmed = value.trim();
-  if (!trimmed.startsWith(RULES[name].prefix)) {
+  const prefix = RULES[name].prefix;
+  if (prefix && !trimmed.startsWith(prefix)) {
     return { ok: false, error: "bad_format" };
   }
 

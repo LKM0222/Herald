@@ -1,6 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { CATALOG } from "@shared/sources";
-import { KeyRound, Palette, Plug, Rss, Sparkles } from "lucide-react";
+import {
+  CalendarDays,
+  CalendarX,
+  KeyRound,
+  Palette,
+  Plug,
+  Rss,
+  Sparkles,
+} from "lucide-react";
 import {
   fetchSecrets,
   fetchSettings,
@@ -8,6 +16,7 @@ import {
   saveSettings,
   setPassword,
   type Failure,
+  type SaveSecretResult,
 } from "../lib/api";
 import type { SecretStatus } from "@shared/types";
 import { saveConfig, type Config } from "../lib/config";
@@ -18,7 +27,14 @@ import {
   savePalette,
   type PaletteId,
 } from "../lib/palette";
-import { Button, Field, inputClass, Kicker, Tag } from "../components/ui";
+import {
+  Button,
+  Field,
+  inputClass,
+  Kicker,
+  PendingButton,
+  Tag,
+} from "../components/ui";
 
 /**
  * 설정은 네 구획이다. 좁은 화면에선 그냥 쌓이고,
@@ -28,6 +44,7 @@ const SECTIONS = [
   { id: "appearance", label: "겉모습", Icon: Palette },
   { id: "sources", label: "뉴스 소스", Icon: Rss },
   { id: "summary", label: "요약 API", Icon: Sparkles },
+  { id: "calendar", label: "캘린더", Icon: CalendarDays },
   { id: "password", label: "비밀번호", Icon: KeyRound },
   { id: "connection", label: "연결", Icon: Plug },
 ] as const;
@@ -63,6 +80,7 @@ export function Settings({
         <AppearanceSection />
         <SourcesSection config={config} />
         <SummarySection config={config} />
+        <CalendarSection config={config} />
         <PasswordSection config={config} onConfigChanged={onConfigChanged} />
         <ConnectionSection config={config} onReconnect={onReconnect} />
       </div>
@@ -395,6 +413,199 @@ function SummarySection({ config }: { config: Config }) {
       )}
     </Section>
   );
+}
+
+/**
+ * 캘린더 연결.
+ *
+ * ⚠ 네이버는 CalDAV 뿐이라 OAuth 토큰이 아니라 **비밀번호**를 들고 있어야 한다.
+ *   그래서 반드시 애플리케이션 비밀번호를 받는다 — 계정 비밀번호를 받는
+ *   입력 경로를 만들지 않는다 (CLAUDE.md 절대 규칙 3).
+ *   저장은 요약 API 키와 같은 암호화 경로를 탄다.
+ */
+function CalendarSection({ config }: { config: Config }) {
+  const [statuses, setStatuses] = useState<SecretStatus[] | null>(null);
+  const [id, setId] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<
+    { tone: "ok" | "error"; text: string } | null
+  >(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchSecrets(config).then((result) => {
+      if (cancelled) return;
+      if (result.kind === "ok") setStatuses(result.secrets);
+      else setMessage({ tone: "error", text: describe(result) });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [config]);
+
+  const naverId = statuses?.find((item) => item.name === "naver_id");
+  const naverPassword = statuses?.find((item) => item.name === "naver_password");
+  const connected = Boolean(naverId?.set && naverPassword?.set);
+  const ready = id.trim() !== "" && password.trim() !== "" && !busy;
+
+  async function connect() {
+    setBusy(true);
+    const first = await saveSecret(config, "naver_id", id);
+    if (first.kind !== "ok") {
+      setBusy(false);
+      setMessage({ tone: "error", text: explain(first) });
+      return;
+    }
+    const second = await saveSecret(config, "naver_password", password);
+    setBusy(false);
+    if (second.kind !== "ok") {
+      setMessage({ tone: "error", text: explain(second) });
+      return;
+    }
+    setStatuses(second.secrets);
+    setId("");
+    setPassword("");
+    setMessage({
+      tone: "ok",
+      text: "저장했어요. 실제로 일정을 가져오는 건 다음 단계에서 붙습니다.",
+    });
+  }
+
+  async function disconnect() {
+    setBusy(true);
+    await saveSecret(config, "naver_id", "");
+    const result = await saveSecret(config, "naver_password", "");
+    setBusy(false);
+    if (result.kind === "ok") {
+      setStatuses(result.secrets);
+      setMessage({ tone: "ok", text: "연결을 끊었어요." });
+    }
+  }
+
+  return (
+    <Section
+      id="calendar"
+      title="캘린더"
+      note="일정 탭과 아침 브리핑에 띄울 캘린더를 연결해요. 계정 정보는 서버에만 암호화되어 저장되고 브라우저엔 남지 않습니다."
+      aside={connected ? <Tag tone="accent">연결됨</Tag> : <Tag>연결 전</Tag>}
+    >
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          <Kicker>연결된 계정</Kicker>
+          {connected ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3">
+              <span className="flex flex-col gap-0.5">
+                <span className="font-display text-sm">
+                  네이버 캘린더 · {naverId?.tail}
+                </span>
+                <span className="text-xs text-dim">
+                  앱 비밀번호 ••••{naverPassword?.tail}
+                </span>
+              </span>
+              <Button onClick={() => void disconnect()} disabled={busy}>
+                연결 끊기
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-start gap-1.5 rounded-xl border border-line px-4 py-4">
+              <CalendarX size={18} strokeWidth={1.5} className="text-dim" />
+              <span className="text-sm">아직 연결한 캘린더가 없어요</span>
+              <span className="text-xs text-dim">
+                아래에서 하나 골라 연결하면 일정 탭이 채워집니다.
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <Kicker>계정 추가</Kicker>
+
+          <form
+            className="flex flex-col gap-3 rounded-xl border border-line p-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (ready) void connect();
+            }}
+          >
+            <div className="flex flex-col gap-0.5">
+              <span className="font-display text-base">네이버 캘린더</span>
+              <span className="text-xs leading-relaxed text-dim">
+                CalDAV 로 붙어요. <b>로그인 비밀번호가 아니라 앱 비밀번호</b>를
+                넣어야 합니다.
+              </span>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="아이디">
+                <input
+                  value={id}
+                  onChange={(event) => setId(event.target.value)}
+                  placeholder="naver_id"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="앱 비밀번호">
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  autoComplete="off"
+                  className={inputClass}
+                />
+              </Field>
+            </div>
+
+            {message ? (
+              <Notice tone={message.tone}>{message.text}</Notice>
+            ) : null}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="submit" variant="primary" disabled={!ready}>
+                <Plug size={16} strokeWidth={1.5} />
+                {busy ? "저장 중…" : "연결하기"}
+              </Button>
+              <span className="text-xs text-dim">
+                앱 비밀번호는 네이버 보안 설정에서 발급받을 수 있어요
+              </span>
+            </div>
+          </form>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3.5">
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="text-sm font-medium">Google 캘린더</span>
+              <span className="text-xs text-dim">
+                계정으로 로그인해 읽기 권한만 받아요
+              </span>
+            </span>
+            <PendingButton title="Google 캘린더 연결">연결하기</PendingButton>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3.5">
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="text-sm font-medium">iCal 주소로 구독</span>
+              <span className="text-xs text-dim">
+                .ics 주소만 있으면 어떤 캘린더든 읽어와요
+              </span>
+            </span>
+            <PendingButton title="iCal 주소 넣기">주소 넣기</PendingButton>
+          </div>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+/** saveSecret 의 실패 종류를 사람 말로. */
+function explain(result: SaveSecretResult): string {
+  if (result.kind === "no_encryption_key") {
+    return "서버에 ENCRYPTION_KEY 가 없어 암호화 저장을 할 수 없습니다.";
+  }
+  if (result.kind === "bad_format") return "형식이 맞지 않습니다.";
+  if (result.kind === "ok") return "";
+  return describe(result);
 }
 
 /** 비밀번호 설정·변경. 이걸 설정해야 다른 기기에서 긴 토큰 없이 들어온다. */

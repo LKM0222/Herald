@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { formatRelative } from "@shared/date";
 import type { Briefing, NewsItem } from "@shared/types";
 import {
@@ -15,9 +16,10 @@ import { hrefFor } from "../lib/views";
 /**
  * 하루를 여는 화면.
  *
- * 카드 넷을 나란히 놓지 않는다 — 그러면 넷이 다 같은 무게로 읽혀서
- * 아침에 어디부터 볼지가 안 정해진다. 1순위 기사 하나를 크게 세우고
- * 나머지는 옆 스트립으로 밀어 무게를 갈랐다.
+ * 홈에는 "먼저 볼 것"만 둔다. 나머지 층까지 얹으면 아침에 스크롤이 시작되고,
+ * 그 순간 홈이 뉴스 탭의 축소판이 된다.
+ * 여러 건은 세로로 쌓지 않고 좌우로 넘긴다 — 한 번에 한 건만 보이면
+ * "다음 것도 봐야 하나"를 매번 안 따져도 된다.
  */
 export function Home({
   briefing,
@@ -28,7 +30,6 @@ export function Home({
   date?: string;
 }) {
   const leads = briefing.news.filter((item) => item.priority === 1);
-  const [first, ...restLeads] = leads;
 
   return (
     <div className="flex flex-col gap-8 lg:flex-row lg:gap-10">
@@ -40,22 +41,7 @@ export function Home({
           </h2>
         </div>
 
-        {first ? (
-          <LeadArticle item={first} index={1} total={leads.length} />
-        ) : (
-          <p className="rounded-2xl border border-line bg-surface p-6 text-sm text-dim">
-            먼저 볼 것으로 분류된 기사가 없습니다.
-          </p>
-        )}
-
-        {restLeads.map((item, index) => (
-          <SecondaryRow
-            key={item.id}
-            item={item}
-            index={index + 2}
-            date={date}
-          />
-        ))}
+        <LeadCarousel leads={leads} total={briefing.news.length} date={date} />
 
         <ContinueSection briefing={briefing} />
       </div>
@@ -70,8 +56,117 @@ export function Home({
   );
 }
 
-/** 1순위 기사. 제목을 크게 세우고 "왜 중요한가"를 강조 박스로 편다. */
-function LeadArticle({
+/**
+ * 좌우로 넘기는 리드 카드.
+ *
+ * 자바스크립트 캐러셀을 만들지 않고 `scroll-snap` 에 맡긴다 —
+ * 터치 관성·접근성·키보드 조작이 브라우저 기본 동작으로 따라온다.
+ * 점 표시만 스크롤 위치를 읽어 갱신한다.
+ */
+function LeadCarousel({
+  leads,
+  total,
+  date,
+}: {
+  leads: NewsItem[];
+  total: number;
+  date?: string;
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState(0);
+
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
+    const onScroll = () => {
+      // 카드 폭은 트랙 폭과 다르다(좌우 여백·간격). 나눗셈으로 넘겨짚지 않고
+      // 스크롤 위치에 가장 가까운 카드를 찾는다.
+      // ⚠ 이 비교가 성립하려면 트랙이 offsetParent 여야 한다 — 그래서 relative.
+      const cards = [...track.children] as HTMLElement[];
+      let nearest = 0;
+      let best = Infinity;
+      cards.forEach((card, index) => {
+        const distance = Math.abs(card.offsetLeft - track.scrollLeft);
+        if (distance < best) {
+          best = distance;
+          nearest = index;
+        }
+      });
+      setActive(nearest);
+    };
+    track.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => track.removeEventListener("scroll", onScroll);
+  }, [leads.length]);
+
+  function goTo(index: number) {
+    const track = trackRef.current;
+    const card = track?.children[index] as HTMLElement | undefined;
+    if (!track || !card) return;
+    // 카드 위치를 그대로 목적지로 쓴다 — 폭을 가정하면 snap 이 끌어당기는
+    // 자리와 어긋나 제자리로 튕긴다.
+    // scrollIntoView 를 쓰지 않는 이유: 세로 스크롤까지 건드린다.
+    track.scrollTo({ left: card.offsetLeft, behavior: "smooth" });
+  }
+
+  if (leads.length === 0) {
+    return (
+      <p className="rounded-2xl border border-line bg-surface p-6 text-sm text-dim">
+        먼저 볼 것으로 분류된 기사가 없어요.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3.5">
+      <div
+        ref={trackRef}
+        className="relative -mx-1 flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {leads.map((item, index) => (
+          <LeadCard
+            key={item.id}
+            item={item}
+            index={index + 1}
+            total={leads.length}
+          />
+        ))}
+      </div>
+
+      {leads.length > 1 ? (
+        <div className="flex justify-center gap-2">
+          {leads.map((item, index) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => goTo(index)}
+              aria-label={`${index + 1}번째 기사`}
+              aria-current={index === active}
+              className={`h-1.5 rounded-full transition-all ${
+                index === active ? "w-6 bg-accent" : "w-1.5 bg-line"
+              }`}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      <a
+        href={hrefFor("news", date)}
+        className="self-start text-[13px] text-accent hover:underline"
+      >
+        자세한 건 뉴스 탭에서 · 전체 {total}건 →
+      </a>
+    </div>
+  );
+}
+
+/**
+ * 리드 카드 한 장.
+ *
+ * "왜 중요한가"를 따로 박스에 가두지 않고 원제·다른 매체와 묶어 한 문단으로
+ * 읽힌다 — 홈에서 한 건만 보여주는 이상, 조각내면 오히려 눈이 흩어진다.
+ */
+function LeadCard({
   item,
   index,
   total,
@@ -80,10 +175,8 @@ function LeadArticle({
   index: number;
   total: number;
 }) {
-  const extra = item.alsoIn?.length ?? 0;
-
   return (
-    <article className="flex flex-col gap-3.5 rounded-2xl border border-line bg-surface p-5 sm:p-7">
+    <article className="flex w-full shrink-0 snap-start flex-col gap-3.5 rounded-2xl border border-line bg-surface p-5 sm:p-7">
       <div className="flex flex-wrap items-center gap-2.5">
         <Kicker tone="accent">
           먼저 볼 것 · {String(index).padStart(2, "0")} /{" "}
@@ -96,71 +189,43 @@ function LeadArticle({
         </span>
       </div>
 
-      <h3 className="max-w-[24ch] font-display text-2xl leading-[1.18] sm:text-[33px]">
+      <h3 className="max-w-[24ch] font-display text-2xl leading-[1.18] sm:text-[31px]">
         {item.summary ?? item.title}
       </h3>
 
-      {item.relevance ? (
-        <p className="rounded-xl bg-accent-soft px-4 py-3 text-sm leading-relaxed text-accent-ink">
-          {item.relevance}
-        </p>
-      ) : null}
+      <p className="max-w-[56ch] text-[15px] leading-relaxed text-mid text-pretty">
+        {describeItem(item)}
+      </p>
 
       <div className="flex flex-wrap items-center gap-2">
         <LinkButton href={item.url} external variant="primary">
           <ExternalLink size={16} strokeWidth={1.5} />
-          원문 열어보기
+          <span className="whitespace-nowrap">원문 열어보기</span>
         </LinkButton>
         <PendingButton title="담아두기">
           <Bookmark size={16} strokeWidth={1.5} />
-          담아두기
+          <span className="whitespace-nowrap">담아두기</span>
         </PendingButton>
         <PendingButton title="Claude 로 조사">
           <Search size={16} strokeWidth={1.5} />
-          Claude 로 조사
+          <span className="whitespace-nowrap">Claude 로 조사</span>
         </PendingButton>
-        {extra > 0 ? (
-          <span className="text-[11px] text-dim">
-            다른 매체 {extra}곳도 다뤘어요
-          </span>
-        ) : null}
       </div>
     </article>
   );
 }
 
-/** 2순위 이후의 1층 기사. 번호를 앞세우고 한 줄로 줄인다. */
-function SecondaryRow({
-  item,
-  index,
-  date,
-}: {
-  item: NewsItem;
-  index: number;
-  date?: string;
-}) {
-  return (
-    <div className="flex items-center gap-4 rounded-xl border border-line bg-surface px-5 py-4">
-      <span className="font-display text-base text-accent">
-        {String(index).padStart(2, "0")}
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-base leading-snug">
-          {item.summary ?? item.title}
-        </span>
-        <span className="text-[11px] text-dim">
-          {item.source} · {formatRelative(item.publishedAt)}
-          {item.topic ? ` · ${item.topic}` : ""}
-        </span>
-      </div>
-      <a
-        href={hrefFor("news", date)}
-        className="hidden shrink-0 text-[13px] text-accent hover:underline sm:inline"
-      >
-        뉴스 탭에서 다 보기 →
-      </a>
-    </div>
-  );
+/** 관련성 · 중복 보도 · 원제를 한 문단으로 잇는다. 없는 조각은 빠진다. */
+function describeItem(item: NewsItem): string {
+  const parts: string[] = [];
+  if (item.relevance) parts.push(item.relevance);
+
+  const extra = item.alsoIn?.length ?? 0;
+  if (extra > 0) parts.push(`같은 사건을 다른 매체 ${extra}곳도 다뤘어요`);
+
+  if (item.summary) parts.push(`원제는 ${item.title} 예요`);
+
+  return parts.length > 0 ? `${parts.join(". ")}.` : item.title;
 }
 
 function ContinueSection({ briefing }: { briefing: Briefing }) {
@@ -239,7 +304,7 @@ function Schedule({ briefing }: { briefing: Briefing }) {
           {briefing.schedule.map((item) => (
             <div key={item.id} className="flex gap-2.5">
               <span className="font-display tabular-nums text-accent">
-                {item.time}
+                {item.allDay ? "종일" : item.time}
               </span>
               <span>{item.title}</span>
             </div>

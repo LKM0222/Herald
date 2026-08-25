@@ -13,7 +13,7 @@ import {
   type SecretName,
 } from "@/lib/secrets";
 
-const NAMES: SecretName[] = ["anthropic"];
+const NAMES: SecretName[] = ["anthropic", "naver_id", "naver_password"];
 
 /**
  * 저장된 값은 절대 돌려주지 않는다. 설정 여부와 끝 네 자리만 준다 —

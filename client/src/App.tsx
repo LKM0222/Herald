@@ -5,6 +5,7 @@ import { Button, LinkButton } from "./components/ui";
 import { Setup } from "./Setup";
 import { Home } from "./views/Home";
 import { News } from "./views/News";
+import { ScheduleView } from "./views/ScheduleView";
 import { Settings } from "./views/Settings";
 import { fetchBriefing, type BriefingResult } from "./lib/api";
 import { clearConfig, loadConfig, type Config } from "./lib/config";
@@ -155,11 +156,13 @@ function BriefingView({
     );
   }
 
-  return view === "news" ? (
-    <News briefing={briefing} date={date} today={today} />
-  ) : (
-    <Home briefing={briefing} date={date === today ? undefined : date} />
-  );
+  if (view === "news") {
+    return <News briefing={briefing} date={date} today={today} />;
+  }
+  if (view === "schedule") {
+    return <ScheduleView briefing={briefing} today={today} />;
+  }
+  return <Home briefing={briefing} date={date === today ? undefined : date} />;
 }
 
 function Status({

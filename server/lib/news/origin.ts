@@ -45,6 +45,9 @@ const PAUSE_MS = 250;
 /** 막혀서 실패한 것을 한 번 더 물어본다. 그때는 더 천천히 간다. */
 const RETRY_PAUSE_MS = 1_500;
 
+/** 연달아 이만큼 거절당하면 이번 회차는 포기한다. */
+const GIVE_UP_AFTER = 3;
+
 const AGENT = "Herald/0.1 (+https://github.com/LKM0222/Herald)";
 
 /**
@@ -81,6 +84,11 @@ export type OriginReport = {
   selfPost: number;
   /** 두 번 물어보고도 못 읽은 건수. 그대로 두고 넘어간다 */
   failed: number;
+  /**
+   * 사이트가 거절한 상태 코드. 있으면 **원본 복원이 통째로 멈춘 것**이고,
+   * 중복 병합과 원문 크롤링이 그만큼 약해진다. 조용히 넘기면 안 되는 신호다.
+   */
+  blocked?: number;
   ms: number;
 };
 
@@ -166,14 +174,25 @@ async function sweep(
   report: OriginReport,
 ): Promise<NewsItem[]> {
   const again: NewsItem[] = [];
+  /* 연달아 거절당하면 그만 묻는다. 실측으로 50건을 두 번씩 물어보느라 28.7초를
+     버렸는데, 답은 처음부터 끝까지 403 이었다. 안 준다는 곳에 100번 두드릴 이유가 없다. */
+  let refusals = 0;
 
   for (let at = 0; at < items.length; at += CONCURRENCY) {
+    if (refusals >= GIVE_UP_AFTER) break;
+
     const batch = items.slice(at, at + CONCURRENCY);
     const results = await Promise.all(batch.map((item) => lookup(item.url)));
 
     for (let i = 0; i < batch.length; i += 1) {
       const item = batch[i];
       const result = results[i];
+      if (result.kind === "blocked") {
+        refusals += 1;
+        report.blocked = result.status;
+        continue; // 다시 안 묻는다
+      }
+      refusals = 0;
       if (result.kind === "found") {
         found.set(item.url, result.url);
         cache[item.url] = { url: result.url, at: today() };
@@ -214,6 +233,8 @@ function hiderFor(url: string): Hider | undefined {
 type Lookup =
   | { kind: "found"; url: string }
   | { kind: "none" }
+  /** 거절당했다(403·401·429). 다시 물어봐야 답이 같다 */
+  | { kind: "blocked"; status: number }
   | { kind: "error" };
 
 async function lookup(url: string): Promise<Lookup> {
@@ -226,6 +247,12 @@ async function lookup(url: string): Promise<Lookup> {
       signal: AbortSignal.timeout(TIMEOUT_MS),
       redirect: "follow",
     });
+    /* 403·401·429 는 "지금 안 된다" 가 아니라 "너한테는 안 준다" 다.
+       실제로 오라클 서버에서 news.hada.io 가 RSS 는 200, 토픽 페이지는 403 을 준다.
+       재시도해도 답이 같아서 구분해 둔다. */
+    if ([401, 403, 429].includes(response.status)) {
+      return { kind: "blocked", status: response.status };
+    }
     if (!response.ok) return { kind: "error" };
 
     const tag = hider.find(await response.text());

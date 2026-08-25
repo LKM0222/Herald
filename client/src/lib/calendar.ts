@@ -29,12 +29,17 @@ export type MonthCell = {
  */
 const CELLS = 42;
 
-export function monthGrid(year: number, month: number): MonthCell[] {
-  const prefix = `${year}-${String(month).padStart(2, "0")}`;
-  // 1일이 무슨 요일이든 그 주의 월요일부터 시작한다.
-  const start = shiftISO(`${prefix}-01`, -weekdayIndex(`${prefix}-01`));
+/** 어느 날이 든 그 주의 월요일. */
+export function weekStart(date: string): string {
+  return shiftISO(date, -weekdayIndex(date));
+}
 
-  return Array.from({ length: CELLS }, (_, index) => {
+/**
+ * start 부터 count 칸.
+ * prefix("2026-08")에 속하지 않는 날은 앞뒤를 채우는 날로 표시한다.
+ */
+function cellsFrom(start: string, count: number, prefix: string): MonthCell[] {
+  return Array.from({ length: count }, (_, index) => {
     const date = shiftISO(start, index);
     return {
       date,
@@ -43,6 +48,17 @@ export function monthGrid(year: number, month: number): MonthCell[] {
       weekend: index % 7 >= 5,
     };
   });
+}
+
+export function monthGrid(year: number, month: number): MonthCell[] {
+  const prefix = `${year}-${String(month).padStart(2, "0")}`;
+  // 1일이 무슨 요일이든 그 주의 월요일부터 시작한다.
+  return cellsFrom(weekStart(`${prefix}-01`), CELLS, prefix);
+}
+
+/** 그 날이 속한 주 한 줄. 다른 달의 날은 월간과 같은 규칙으로 흐리게 둔다. */
+export function weekRow(date: string): MonthCell[] {
+  return cellsFrom(weekStart(date), 7, date.slice(0, 7));
 }
 
 /** 달 이동. 12월 다음은 다음 해 1월이다. */
@@ -57,6 +73,27 @@ export function shiftMonth(
 
 export function monthOf(date: string): { year: number; month: number } {
   return { year: Number(date.slice(0, 4)), month: Number(date.slice(5, 7)) };
+}
+
+/** 그 달의 마지막 날. Date.UTC 의 0일이 전달 말일이라는 성질을 쓴다. */
+function lastDayOf(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+/**
+ * 고른 날짜를 유지한 채 달만 옮긴다.
+ *
+ * 1월 31일에서 다음 달로 가면 2월 31일은 없다. 없는 날은 그 달 말일로 당긴다 —
+ * 달력 앱들이 다 이렇게 하고, 안 그러면 3월로 튀어버린다.
+ */
+export function shiftMonthKeepingDay(date: string, delta: number): string {
+  const here = monthOf(date);
+  const there = shiftMonth(here.year, here.month, delta);
+  const day = Math.min(
+    Number(date.slice(8, 10)),
+    lastDayOf(there.year, there.month),
+  );
+  return `${there.year}-${String(there.month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 export type DayEvent = ScheduleItem & { date: string };
@@ -96,4 +133,10 @@ function byStartTime(a: DayEvent, b: DayEvent): number {
 /** 칩에 쓰는 짧은 표기. 종일 일정은 시각 자리에 "종일"이 온다. */
 export function eventLabel(event: DayEvent | ScheduleItem): string {
   return event.allDay ? "종일" : event.time;
+}
+
+/** 상세에 쓰는 긴 표기. 끝 시각을 아는 일정만 범위로 보여준다. */
+export function eventTime(event: DayEvent | ScheduleItem): string {
+  if (event.allDay) return "종일";
+  return event.endTime ? `${event.time} – ${event.endTime}` : event.time;
 }

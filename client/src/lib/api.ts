@@ -1,4 +1,4 @@
-import type { Briefing } from "@shared/types";
+import type { Briefing, SecretStatus } from "@shared/types";
 import type { Config } from "./config";
 
 /**
@@ -174,4 +174,52 @@ export async function setPassword(
   }
   const body = (await response.json()) as { token?: string };
   return { kind: "ok", token: body.token ?? null };
+}
+
+// ── 자격증명 ─────────────────────────────────────────────
+// 값은 절대 내려오지 않는다. 설정 여부와 끝 네 자리만 온다.
+
+export type SecretsResult = Result<{
+  secrets: SecretStatus[];
+  canStore: boolean;
+}>;
+
+export async function fetchSecrets(config: Config): Promise<SecretsResult> {
+  const response = await request(config, "/api/secrets");
+  if (isFailure(response)) return response;
+  const body = (await response.json()) as {
+    secrets: SecretStatus[];
+    canStore: boolean;
+  };
+  return { kind: "ok", secrets: body.secrets, canStore: body.canStore };
+}
+
+export type SaveSecretResult =
+  | { kind: "ok"; secrets: SecretStatus[] }
+  | { kind: "no_encryption_key" }
+  | { kind: "bad_format" }
+  | Failure;
+
+/** 빈 문자열을 보내면 지운다. */
+export async function saveSecret(
+  config: Config,
+  name: SecretStatus["name"],
+  value: string,
+): Promise<SaveSecretResult> {
+  const response = await request(config, "/api/secrets", {
+    method: "POST",
+    body: JSON.stringify({ name, value }),
+  });
+  if (isFailure(response)) {
+    // 400 은 request 가 unreachable 로 싸버리므로 코드를 되살린다.
+    if (response.kind === "unreachable") {
+      if (response.message.includes("no_encryption_key")) {
+        return { kind: "no_encryption_key" };
+      }
+      if (response.message.includes("bad_format")) return { kind: "bad_format" };
+    }
+    return response;
+  }
+  const body = (await response.json()) as { secrets: SecretStatus[] };
+  return { kind: "ok", secrets: body.secrets };
 }

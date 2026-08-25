@@ -1,12 +1,15 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { CATALOG } from "@shared/sources";
-import { KeyRound, Palette, Plug, Rss } from "lucide-react";
+import { KeyRound, Palette, Plug, Rss, Sparkles } from "lucide-react";
 import {
+  fetchSecrets,
   fetchSettings,
+  saveSecret,
   saveSettings,
   setPassword,
   type Failure,
 } from "../lib/api";
+import type { SecretStatus } from "@shared/types";
 import { saveConfig, type Config } from "../lib/config";
 import {
   applyPalette,
@@ -24,6 +27,7 @@ import { Button, Field, inputClass, Kicker, Tag } from "../components/ui";
 const SECTIONS = [
   { id: "appearance", label: "겉모습", Icon: Palette },
   { id: "sources", label: "뉴스 소스", Icon: Rss },
+  { id: "summary", label: "요약 API", Icon: Sparkles },
   { id: "password", label: "비밀번호", Icon: KeyRound },
   { id: "connection", label: "연결", Icon: Plug },
 ] as const;
@@ -58,6 +62,7 @@ export function Settings({
       <div className="flex min-w-0 flex-1 flex-col gap-8">
         <AppearanceSection />
         <SourcesSection config={config} />
+        <SummarySection config={config} />
         <PasswordSection config={config} onConfigChanged={onConfigChanged} />
         <ConnectionSection config={config} onReconnect={onReconnect} />
       </div>
@@ -237,6 +242,157 @@ function SourcesSection({ config }: { config: Config }) {
         Anthropic 은 공식 RSS 가 없어 목록에 없습니다. 수집은 아직 붙지 않아
         지금은 선택만 저장됩니다.
       </p>
+    </Section>
+  );
+}
+
+/**
+ * 기사 요약에 쓸 API 키.
+ *
+ * 값은 서버에만 있고 화면으로 돌아오지 않는다 — 끝 네 자리만 보여준다.
+ * 저장은 AES-GCM 암호화를 거친다 (CLAUDE.md 절대 규칙 3).
+ */
+function SummarySection({ config }: { config: Config }) {
+  const [statuses, setStatuses] = useState<SecretStatus[] | null>(null);
+  const [canStore, setCanStore] = useState(true);
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<
+    { tone: "ok" | "error"; text: string } | null
+  >(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchSecrets(config).then((result) => {
+      if (cancelled) return;
+      if (result.kind === "ok") {
+        setStatuses(result.secrets);
+        setCanStore(result.canStore);
+      } else {
+        setMessage({ tone: "error", text: describe(result) });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [config]);
+
+  const anthropic = statuses?.find((item) => item.name === "anthropic");
+
+  async function submit(next: string) {
+    setBusy(true);
+    const result = await saveSecret(config, "anthropic", next);
+    setBusy(false);
+
+    if (result.kind === "ok") {
+      setStatuses(result.secrets);
+      setValue("");
+      setMessage({
+        tone: "ok",
+        text: next === "" ? "지웠습니다." : "저장했습니다.",
+      });
+      return;
+    }
+    setMessage({
+      tone: "error",
+      text:
+        result.kind === "bad_format"
+          ? "Anthropic 키는 sk-ant- 로 시작합니다. 다시 확인해 주세요."
+          : result.kind === "no_encryption_key"
+            ? "서버에 ENCRYPTION_KEY 가 없어 암호화 저장을 할 수 없습니다. 평문으로 두지 않으려고 거부했습니다."
+            : describe(result),
+    });
+  }
+
+  return (
+    <Section
+      id="summary"
+      title="요약 API"
+      note="기사를 한 줄로 줄이고 '왜 중요한가'를 판단하는 데 Claude API 를 씁니다. 키는 서버에 암호화해 저장되고 화면으로 돌아오지 않습니다."
+      aside={
+        anthropic?.set ? (
+          <Tag tone="accent">연결됨</Tag>
+        ) : (
+          <Tag>아직 없음</Tag>
+        )
+      }
+    >
+      {statuses === null && !message ? (
+        <p className="text-sm text-dim">불러오는 중…</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {anthropic?.set ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3">
+              <span className="flex flex-col gap-0.5">
+                <span className="font-display text-sm">
+                  {anthropic.label} ••••{anthropic.tail}
+                </span>
+                <span className="text-xs text-dim">
+                  {anthropic.fromEnv
+                    ? "서버 .env 에서 읽었습니다. 화면에서 바꾸면 이 값을 덮어씁니다."
+                    : anthropic.updatedAt
+                      ? `${anthropic.updatedAt.slice(0, 10)} 에 저장됨`
+                      : "저장됨"}
+                </span>
+              </span>
+              {anthropic.fromEnv ? null : (
+                <Button onClick={() => void submit("")} disabled={busy}>
+                  지우기
+                </Button>
+              )}
+            </div>
+          ) : null}
+
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (value.trim() !== "" && !busy) void submit(value);
+            }}
+          >
+            <Field
+              label={anthropic?.set ? "새 키로 바꾸기" : "Anthropic API 키"}
+            >
+              <input
+                type="password"
+                value={value}
+                onChange={(event) => setValue(event.target.value)}
+                placeholder="sk-ant-..."
+                autoComplete="off"
+                spellCheck={false}
+                className={inputClass}
+              />
+            </Field>
+
+            {message ? (
+              <Notice tone={message.tone}>{message.text}</Notice>
+            ) : null}
+
+            <div>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={value.trim() === "" || busy || !canStore}
+              >
+                {busy ? "저장 중…" : "키 저장"}
+              </Button>
+            </div>
+          </form>
+
+          {canStore ? null : (
+            <Notice tone="error">
+              서버에 ENCRYPTION_KEY 가 없습니다. 설정하기 전까지는 키를 저장할 수
+              없습니다 — 평문으로 두지 않기 위해서입니다.
+            </Notice>
+          )}
+
+          <p className="text-xs leading-relaxed text-dim">
+            키는 console.anthropic.com 에서 발급합니다. 요약은 하루 한 번만
+            돌기 때문에 사용량은 크지 않습니다. 아직 요약 단계가 붙지 않아
+            지금은 저장만 됩니다.
+          </p>
+        </div>
+      )}
     </Section>
   );
 }

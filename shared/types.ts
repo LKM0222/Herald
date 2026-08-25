@@ -70,3 +70,18 @@ export type Briefing = {
   continues: ContinueItem[];
   launchpad: LaunchItem[];
 };
+
+/**
+ * 화면에서 넣는 자격증명의 상태.
+ * ⚠ 값 자체는 절대 이 타입에 담기지 않는다 — 서버가 돌려주지 않는다.
+ */
+export type SecretStatus = {
+  name: "anthropic";
+  label: string;
+  set: boolean;
+  /** 끝 네 자리. 맞는 키를 넣었는지 눈으로 대조하는 용도 */
+  tail?: string;
+  updatedAt?: string;
+  /** 저장분이 없고 .env 로 들어온 경우. 화면에서 바꿀 수 없다 */
+  fromEnv?: boolean;
+};

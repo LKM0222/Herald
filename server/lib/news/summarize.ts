@@ -1,6 +1,6 @@
 import type { NewsItem, Priority } from "@shared/types";
 import { getSecret } from "../secrets";
-import { fetchArticles } from "./article";
+import { fetchArticles, type Fetched } from "./article";
 import { INTERESTS } from "./interests";
 
 /**
@@ -47,6 +47,11 @@ export type SummarizeResult =
       usage: Usage;
       /** 사람이 봐야 할 것 — 원문을 못 가져온 기사 등 */
       notes: string[];
+      /**
+       * 먼저 볼 것으로 뽑혀 크롤링한 원문. 2차 호출이 실제로 읽은 재료다.
+       * 보관해 두면 **다시 긁지 않고** 프롬프트만 바꿔 요약을 재현할 수 있다.
+       */
+      articles: Fetched[];
     }
   | { ok: false; kind: "no_key" | "api" | "shape"; message: string };
 
@@ -60,7 +65,7 @@ export async function summarize(items: NewsItem[]): Promise<SummarizeResult> {
     };
   }
   if (items.length === 0) {
-    return { ok: true, news: [], headline: "", usage: empty(), notes: [] };
+    return { ok: true, news: [], headline: "", usage: empty(), notes: [], articles: [] };
   }
 
   const usage = empty();
@@ -95,9 +100,10 @@ export async function summarize(items: NewsItem[]): Promise<SummarizeResult> {
 
   // ── 2차 · 먼저 볼 것만 원문으로 ────────────────────────
   const deep = new Map<string, { summary: string; relevance: string }>();
+  let fetched: Fetched[] = [];
 
   if (lead.length > 0) {
-    const fetched = await fetchArticles(lead);
+    fetched = await fetchArticles(lead);
     for (const one of fetched) {
       if (one.error) {
         const title = byId.get(one.id)?.title ?? one.id;
@@ -141,7 +147,7 @@ export async function summarize(items: NewsItem[]): Promise<SummarizeResult> {
     };
   });
 
-  return { ok: true, news, headline: triage.headline, usage, notes };
+  return { ok: true, news, headline: triage.headline, usage, notes, articles: fetched };
 }
 
 // ── 프롬프트 ─────────────────────────────────────────────

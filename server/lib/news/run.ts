@@ -1,5 +1,5 @@
 import type { Briefing } from "@shared/types";
-import { saveBriefing } from "../briefing/store";
+import { saveArchive, saveBriefing } from "../briefing/store";
 import { pending } from "./pending";
 import { markSummarized } from "./seen";
 import { summarize, type Usage } from "./summarize";
@@ -33,7 +33,24 @@ export type RunResult =
 export async function runBriefing(date: string): Promise<RunResult> {
   const started = Date.now();
 
-  const { items } = await pending();
+  const collected = await pending();
+  const { items } = collected;
+
+  /* 요약보다 먼저 남긴다. 요약이 실패한 날에도 "무엇을 모았는지" 가 남아야
+     원인을 찾는다 — 실패하고 나서 기록하면 실패한 날만 아무것도 안 남는다. */
+  saveArchive(date, {
+    collectedAt: new Date().toISOString(),
+    hours: collected.hours,
+    collect: {
+      items: collected.items,
+      reports: collected.reports,
+      skipped: collected.skipped,
+      dropped: collected.dropped,
+      merged: collected.merged,
+      origins: collected.origins,
+    },
+  });
+
   if (items.length === 0) {
     // 새 기사가 없다. 호출하지 않는다 — 빈 목록에 토큰을 쓸 이유가 없다.
     return { ok: false, reason: "새로 요약할 기사가 없습니다", ms: Date.now() - started };
@@ -41,6 +58,7 @@ export async function runBriefing(date: string): Promise<RunResult> {
 
   const result = await summarize(items);
   if (!result.ok) {
+    saveArchive(date, { failedAt: new Date().toISOString(), error: result.message });
     return { ok: false, reason: result.message, ms: Date.now() - started };
   }
 
@@ -60,6 +78,13 @@ export async function runBriefing(date: string): Promise<RunResult> {
 
   // 저장이 먼저다. 이게 실패하면 기록도 안 남아서 내일 다시 시도한다.
   saveBriefing(briefing);
+  // 요약이 실제로 읽은 원문과 그날 쓴 토큰. 청구서와 맞춰 볼 근거다.
+  saveArchive(date, {
+    summarizedAt: briefing.generatedAt,
+    articles: result.articles,
+    usage: result.usage,
+    notes: result.notes,
+  });
   markSummarized(
     result.news.map((item) => item.id),
     date,

@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { formatRelative } from "@shared/date";
 import type { Briefing, NewsItem, Priority } from "@shared/types";
 import { Bookmark, ChevronDown, ExternalLink, Search } from "lucide-react";
@@ -38,6 +38,71 @@ function useVerticalSnap() {
   }, []);
 }
 
+/**
+ * 스크롤 컨테이너를 찾는다 — md 이상은 `<main>`, 그 아래는 문서다.
+ *
+ * 폭으로 갈라 짐작하지 않고 "정말 넘치는 쪽" 을 고른다. 브레이크포인트를
+ * 두 곳에 적어 두면 한쪽만 고쳐지는 날이 온다.
+ */
+function scrollerFor(root: HTMLElement | null): HTMLElement | null {
+  const pane = root?.closest<HTMLElement>("[data-scrollarea]");
+  if (pane && pane.scrollHeight > pane.clientHeight) return pane;
+  return document.scrollingElement as HTMLElement | null;
+}
+
+/**
+ * 지금 몇 번째 층에 서 있는지. 오른쪽 도트가 이 값을 쓴다.
+ *
+ * 칸 폭을 나눗셈으로 넘겨짚지 않고 **화면 꼭대기에 가장 가까운 칸**을 고른다
+ * (SnapCarousel 의 nearestIndex 와 같은 문법이다). 칸 높이가 내용에 따라
+ * 늘어날 수 있어서 — min-height 라 그렇다 — 나눗셈은 어긋난다.
+ *
+ * ⚠ 칸에 tierIn 의 translateY 가 걸려 있어 rect.top 이 최대 28px 밀린다.
+ *   스냅이 늘 칸 꼭대기에 세워 주므로 멈춘 자리에서는 정확하고, 구르는
+ *   도중에만 잠깐 흔들린다 — 도트는 멈춘 자리만 맞으면 된다.
+ */
+function useActiveTier(
+  root: RefObject<HTMLDivElement | null>,
+  count: number,
+): number {
+  const [active, setActive] = useState(0);
+
+  useEffect(() => {
+    const scroller = scrollerFor(root.current);
+    if (!scroller || count === 0) return;
+
+    const read = () => {
+      const panels = [
+        ...(root.current?.querySelectorAll<HTMLElement>(".news-panel") ?? []),
+      ];
+      // 문서가 구를 땐 스크롤포트 꼭대기가 곧 화면 꼭대기(0)다.
+      const portTop =
+        scroller === document.scrollingElement
+          ? 0
+          : scroller.getBoundingClientRect().top;
+      let nearest = 0;
+      let best = Infinity;
+      panels.forEach((panel, index) => {
+        const distance = Math.abs(panel.getBoundingClientRect().top - portTop);
+        if (distance < best) {
+          best = distance;
+          nearest = index;
+        }
+      });
+      setActive(nearest);
+    };
+
+    // 문서 스크롤은 scrollingElement 가 아니라 window 로 올라온다.
+    const target: EventTarget =
+      scroller === document.scrollingElement ? window : scroller;
+    target.addEventListener("scroll", read, { passive: true });
+    read();
+    return () => target.removeEventListener("scroll", read);
+  }, [root, count]);
+
+  return active;
+}
+
 export function News({
   briefing,
   date,
@@ -58,14 +123,20 @@ export function News({
   }));
   const filled = byTier.filter((tier) => tier.items.length > 0);
 
-  const tierBar = (
-    <TierBar
-      total={briefing.news.length}
-      tiers={byTier}
-      date={date}
-      today={today}
-    />
-  );
+  const rootRef = useRef<HTMLDivElement>(null);
+  const active = useActiveTier(rootRef, filled.length);
+
+  // 지난 날짜를 보고 있을 때만 나온다. 도면엔 없지만 이게 없으면 오늘로 돌아올
+  // 길이 화면에서 사라진다 — 예전엔 층 머리띠가 들고 있던 링크다.
+  const backToToday =
+    date !== today ? (
+      <a
+        href={hrefFor("news", today)}
+        className="shrink-0 self-start text-xs text-accent hover:underline"
+      >
+        오늘로 가기 →
+      </a>
+    ) : null;
 
   return (
     /*
@@ -74,29 +145,37 @@ export function News({
      * 을 찾아 올라가는데, 여기서 auto 로 끊기면 칸이 내용 높이로 주저앉아
      * 스냅이 통째로 무너진다.
      */
-    <div className="flex w-full min-w-0 flex-col md:h-full">
+    <div ref={rootRef} className="flex w-full min-w-0 flex-col md:h-full">
       {briefing.news.length === 0 ? (
         <SnapPanel first>
-          {tierBar}
+          <Kicker>오늘 볼 것</Kicker>
           <p className="rounded-2xl border border-line bg-surface p-6 text-sm text-dim">
             오늘 모인 기사가 없습니다.
           </p>
+          {backToToday}
         </SnapPanel>
       ) : (
         filled.map((tier, order) => (
           <SnapPanel key={tier.priority} first={order === 0}>
-            {/* 오늘의 부피는 첫 칸 위에만 한 번 선다 — 칸마다 이고 있으면
-                정작 기사보다 머리글이 먼저 읽힌다 */}
-            {order === 0 ? tierBar : null}
-
+            {/*
+              층 이름이 건수를 같이 들고 있다(도면 5A). 예전엔 첫 칸 위에
+              "6건 · 3층" 머리띠가 따로 섰는데, 오른쪽 도트가 이미 몇 층 중
+              몇 번째인지 말해줘서 같은 말을 두 번 하는 자리가 됐다.
+              머리띠를 걷어낸 자리만큼 기사가 위로 올라온다.
+            */}
             {tier.priority === 3 ? null : (
-              <h3
-                className={`shrink-0 font-display text-sm uppercase tracking-[0.1em] ${
-                  tier.priority === 1 ? "text-accent" : "text-dim"
-                }`}
-              >
-                {tier.no} · {tier.label}
-              </h3>
+              <div className="flex shrink-0 items-center gap-2.5">
+                <h3
+                  className={`font-display text-sm uppercase tracking-[0.1em] ${
+                    tier.priority === 1 ? "text-accent" : "text-dim"
+                  }`}
+                >
+                  {tier.no} · {tier.label}{" "}
+                  <span className="text-dim">{tier.items.length}건</span>
+                </h3>
+                <span className="h-px flex-1 bg-line" />
+                {order === 0 ? backToToday : null}
+              </div>
             )}
 
             {tier.priority === 1 ? (
@@ -125,11 +204,16 @@ export function News({
             ) : tier.priority === 2 ? (
               <SkimList items={tier.items} />
             ) : (
-              <ReferenceFold tier={tier} />
+              <>
+                <ReferenceFold tier={tier} />
+                {order === 0 ? backToToday : null}
+              </>
             )}
           </SnapPanel>
         ))
       )}
+
+      <TierDots tiers={filled} active={active} root={rootRef} />
     </div>
   );
 }
@@ -157,9 +241,14 @@ function SnapPanel({
   children: ReactNode;
 }) {
   return (
+    /*
+      전부 상단 정렬이다(도면 5A: justify-content flex-start). 가운데로 모으면
+      층마다 글이 시작하는 높이가 달라서, 넘길 때마다 눈이 첫 줄을 다시 찾는다.
+      위를 맞춰 두면 층이 바뀌어도 시선이 한자리에 선다.
+    */
     <section
       className={`news-panel flex shrink-0 flex-col ${
-        first ? "gap-5 pb-6 pt-5" : "justify-center gap-3.5 py-6"
+        first ? "gap-5 pb-6 pt-5" : "gap-3.5 py-6"
       }`}
     >
       {children}
@@ -167,49 +256,59 @@ function SnapPanel({
   );
 }
 
-/** 층별 건수를 먼저 보여준다 — 스크롤하기 전에 오늘의 부피를 알 수 있게. */
-function TierBar({
-  total,
+/**
+ * 오른쪽 가장자리의 스냅 도트 (도면 5A).
+ *
+ * 스크롤바를 지운 자리를 대신한다. 스크롤바는 "얼마나 남았나" 를 픽셀로
+ * 말하는데, 이 화면에서 알고 싶은 건 거리가 아니라 **몇 층 중 몇 번째냐** 다.
+ * 도트가 그 셋을 그대로 그린다. 홈의 가로 캐러셀 도트와 같은 문법을 세로로 세운 것.
+ *
+ * ⚠ fixed 다. 스크롤되는 <main> 안에 absolute 로 넣으면 내용과 같이 흘러가고,
+ *   AppShell 을 쪼개 relative 껍데기를 새로 두르면 홈·일정까지 영향을 받는다.
+ * ⚠ right 의 max() — 껍데기가 max-w-[1152px] 로 가운데 서 있어서, 창이 그보다
+ *   넓어지면 화면 오른쪽 끝이 아니라 껍데기 오른쪽 끝에 붙어야 한다.
+ *   1152/2 = 576, 거기서 12px 안쪽 → 564.
+ */
+function TierDots({
   tiers,
-  date,
-  today,
+  active,
+  root,
 }: {
-  total: number;
-  tiers: { priority: Priority; label: string; items: NewsItem[] }[];
-  date: string;
-  today: string;
+  tiers: { no: string; label: string }[];
+  active: number;
+  root: RefObject<HTMLDivElement | null>;
 }) {
-  return (
-    <div className="flex shrink-0 flex-wrap items-end justify-between gap-4 border-b border-line pb-3">
-      <div className="flex flex-col gap-1">
-        <Kicker>오늘 볼 것</Kicker>
-        <span className="font-display text-2xl sm:text-[26px]">
-          {total}건 · {tiers.filter((t) => t.items.length > 0).length}층
-        </span>
-      </div>
+  // 층이 하나뿐이면 넘길 곳이 없다. 있는 척하지 않는다.
+  if (tiers.length < 2) return null;
 
-      <div className="flex flex-wrap items-baseline gap-4 text-xs text-mid">
-        {tiers.map((tier) => (
-          <span key={tier.priority}>
-            {tier.label}{" "}
-            <span
-              className={`font-display text-base ${
-                tier.priority === 1 ? "text-accent" : ""
-              }`}
-            >
-              {tier.items.length}
-            </span>
-          </span>
-        ))}
-        {date !== today ? (
-          <a
-            href={hrefFor("news", today)}
-            className="text-xs text-accent hover:underline"
-          >
-            오늘로 가기 →
-          </a>
-        ) : null}
-      </div>
+  return (
+    <div
+      className="fixed top-1/2 z-10 flex -translate-y-1/2 flex-col items-center gap-2 right-[max(12px,calc(50%-564px))]"
+      role="tablist"
+      aria-label="뉴스 층"
+    >
+      {tiers.map((tier, index) => (
+        <button
+          key={tier.no}
+          type="button"
+          role="tab"
+          aria-selected={index === active}
+          aria-label={`${tier.no} · ${tier.label}`}
+          onClick={() => {
+            const panels =
+              root.current?.querySelectorAll<HTMLElement>(".news-panel");
+            // scrollIntoView 를 쓴다 — 여기선 세로로 옮기는 게 목적이라
+            // SnapCarousel 이 이걸 피한 이유(세로까지 건드림)가 반대로 작동한다.
+            panels?.[index]?.scrollIntoView({
+              behavior: "smooth",
+              block: "start",
+            });
+          }}
+          className={`news-dot w-1.5 rounded-full transition-all ${
+            index === active ? "h-[22px] bg-accent" : "h-1.5 bg-line"
+          }`}
+        />
+      ))}
     </div>
   );
 }

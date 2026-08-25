@@ -165,10 +165,26 @@ function propsOf(response: Record<string, unknown>): Record<string, unknown> {
   return merged;
 }
 
-function hrefOf(value: unknown): string | null {
+/**
+ * 요소의 글자 내용.
+ *
+ * ⚠ 속성이 붙은 요소는 문자열이 아니라 객체로 파싱된다.
+ *   `<calendar-data content-type="text/calendar" version="2.0">…</calendar-data>` 가
+ *   그렇다. 문자열만 받으면 값이 멀쩡히 왔는데도 전부 흘려버린다 —
+ *   실제로 이것 때문에 일정 39건을 0건으로 읽었다.
+ */
+function textOf(value: unknown): string | null {
   if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+  const text = (value as { "#text"?: unknown } | undefined)?.["#text"];
+  return typeof text === "string" ? text : null;
+}
+
+function hrefOf(value: unknown): string | null {
+  const direct = textOf(value);
+  if (direct !== null) return direct;
   const href = (value as { href?: unknown } | undefined)?.href;
-  return typeof href === "string" ? href : null;
+  return textOf(href);
 }
 
 /**
@@ -323,10 +339,8 @@ export async function fetchEventData(
 
   const out: string[] = [];
   for (const response of responsesOf(doc)) {
-    const data = propsOf(response)["calendar-data"];
-    if (typeof data === "string" && data.includes("BEGIN:VEVENT")) {
-      out.push(data);
-    }
+    const data = textOf(propsOf(response)["calendar-data"]);
+    if (data && data.includes("BEGIN:VEVENT")) out.push(data);
   }
   return out;
 }
@@ -348,6 +362,9 @@ export type Probe = {
   resources: number;
   withRange: number;
   withoutRange: number;
+  /** REPORT 가 돌려준 응답 줄 수. 이게 0 이면 서버가 아예 안 준 것이고,
+   *  0 이 아닌데 위 숫자가 0 이면 우리가 못 꺼낸 것이다. */
+  reportRows: number;
   error?: string;
 };
 
@@ -362,6 +379,7 @@ export async function probeCalendar(
     resources: -1,
     withRange: -1,
     withoutRange: -1,
+    reportRows: -1,
   };
 
   try {
@@ -391,9 +409,11 @@ export async function probeCalendar(
   </c:filter>
 </c:calendar-query>`,
     });
-    result.withoutRange = responsesOf(all).filter((response) => {
-      const data = propsOf(response)["calendar-data"];
-      return typeof data === "string" && data.includes("BEGIN:VEVENT");
+    const rows = responsesOf(all);
+    result.reportRows = rows.length;
+    result.withoutRange = rows.filter((response) => {
+      const data = textOf(propsOf(response)["calendar-data"]);
+      return Boolean(data && data.includes("BEGIN:VEVENT"));
     }).length;
   } catch (error) {
     result.error =

@@ -7,10 +7,15 @@ import { Kicker, LinkButton, PendingButton, SCROLL_PANE } from "../components/ui
 import {
   eventLabel,
   eventsByDate,
+  groupByDate,
   monthGrid,
   monthOf,
   WEEKDAYS,
+  type DayEvent,
+  type MonthCell,
 } from "../lib/calendar";
+import type { Config } from "../lib/config";
+import { troubles, useCalendarFeed, type Feed } from "../lib/feed";
 import { hrefFor } from "../lib/views";
 
 /**
@@ -24,12 +29,30 @@ import { hrefFor } from "../lib/views";
 export function Home({
   briefing,
   date,
+  config,
 }: {
   briefing: Briefing;
   /** 오늘이면 생략한다 — 링크에 불필요한 ?d= 를 붙이지 않기 위해 */
   date?: string;
+  /** 미니 달력은 브리핑과 별개로 캘린더를 직접 받아온다 */
+  config: Config;
 }) {
   const leads = briefing.news.filter((item) => item.priority === 1);
+
+  /*
+    캘린더는 여기서 한 번만 받아온다. 미니 달력과 "오늘 일정" 숫자가 각자
+    받아오면 한쪽만 실데이터인 상태가 조용히 생긴다 — 나란히 붙어 있는 둘이
+    서로 다른 값을 말하는 게 이 화면에서 제일 나쁜 실패다.
+  */
+  const { year, month } = monthOf(briefing.date);
+  const cells = monthGrid(year, month);
+  const feed = useCalendarFeed(
+    config,
+    cells[0].date,
+    cells[cells.length - 1].date,
+  );
+  const events =
+    feed.state === "live" ? groupByDate(feed.events) : eventsByDate(briefing);
 
   return (
     // lg:min-h-0 — 아래 두 칸(본문·스트립)이 AppShell 의 <main> 높이에 그대로
@@ -60,8 +83,14 @@ export function Home({
         data-scrollarea
         className={`flex shrink-0 flex-col gap-7 border-line lg:w-56 lg:border-l lg:pl-6 ${SCROLL_PANE}`}
       >
-        <Stats briefing={briefing} />
-        <MiniCalendar briefing={briefing} date={date} />
+        <Stats briefing={briefing} today={events.get(briefing.date)?.length ?? 0} />
+        <MiniCalendar
+          briefing={briefing}
+          date={date}
+          cells={cells}
+          events={events}
+          feed={feed}
+        />
         {/*
           런치패드는 도면(3A)에서 좌측 내비 아래로 내려갔다. 그 내비가 PC 전용이라
           모바일에선 갈 곳이 없어져, 좁을 때만 여기에 남긴다.
@@ -425,7 +454,7 @@ function ContinueSection({ briefing }: { briefing: Briefing }) {
   );
 }
 
-function Stats({ briefing }: { briefing: Briefing }) {
+function Stats({ briefing, today }: { briefing: Briefing; today: number }) {
   const rows = [
     { label: "모인 기사", value: briefing.news.length, accent: false },
     {
@@ -433,7 +462,7 @@ function Stats({ briefing }: { briefing: Briefing }) {
       value: briefing.news.filter((item) => item.priority === 1).length,
       accent: true,
     },
-    { label: "오늘 일정", value: briefing.schedule.length, accent: false },
+    { label: "오늘 일정", value: today, accent: false },
   ];
 
   return (
@@ -463,7 +492,10 @@ function Stats({ briefing }: { briefing: Briefing }) {
  *
  * 오늘 일정 목록을 대신한다 — 목록만 있으면 "오늘"밖에 못 보지만, 달력이면
  * 이번 달 어디가 비었는지가 한눈에 들어온다.
- * 날짜를 누르면 아래 목록이 그날로 바뀐다.
+ * 날짜를 누르면 아래 목록이 그날로 바뀌고, 일정을 누르면 일정 탭의 그 날로 간다.
+ *
+ * 브리핑이 아니라 캘린더에서 직접 받아온다. 일정 탭과 다른 데이터를 보면
+ * 같은 날을 두 화면에서 다르게 읽게 된다.
  *
  * 손가락 기준 40px 은 좁은 화면에서 확보된다 — 그때는 스트립이 화면 전폭이라
  * 한 칸이 41px 안팎이 된다. PC 스트립(224px)에서는 마우스가 쓴다.
@@ -471,22 +503,33 @@ function Stats({ briefing }: { briefing: Briefing }) {
 function MiniCalendar({
   briefing,
   date,
+  cells,
+  events,
+  feed,
 }: {
   briefing: Briefing;
   date?: string;
+  /** 42칸 전체. 그리는 건 이 중 앞부분뿐이다 */
+  cells: MonthCell[];
+  events: Map<string, DayEvent[]>;
+  feed: Feed;
 }) {
   const [selected, setSelected] = useState(briefing.date);
-  const { year, month } = monthOf(briefing.date);
-  const events = eventsByDate(briefing);
-  const picked = events.get(selected) ?? [];
+  const month = Number(briefing.date.slice(5, 7));
 
   // 이번 달이 끝난 뒤의 빈 줄은 자른다. 미니 달력에서 한 줄은 꽤 큰 자리다.
-  const cells = monthGrid(year, month);
   const lastReal = cells.reduce(
     (last, cell, index) => (cell.inMonth ? index : last),
     0,
   );
   const visible = cells.slice(0, Math.ceil((lastReal + 1) / 7) * 7);
+
+  const picked = events.get(selected) ?? [];
+  const trouble = troubles(feed)[0];
+
+  /** 오늘을 보고 있으면 ?d= 를 붙이지 않는다. */
+  const linkFor = (day: string) =>
+    hrefFor("schedule", day === briefing.date ? date : day);
 
   return (
     <section className="flex flex-col gap-2">
@@ -533,19 +576,43 @@ function MiniCalendar({
         <span className="text-[11px] text-dim">
           {formatKoreanDate(selected)}
         </span>
+
         {picked.length === 0 ? (
-          <span className="text-xs text-mid">이 날은 비어 있어요</span>
+          <span className="text-xs text-mid">
+            {feed.state === "loading" ? "불러오는 중이에요" : "이 날은 비어 있어요"}
+          </span>
         ) : (
           picked.map((item) => (
-            <div key={item.id} className="flex gap-2.5 text-xs">
+            /*
+              일정 자체가 링크다. 여기엔 상세를 펼칠 자리가 없어서, 누르면
+              일정 탭의 그 날로 보낸다 — 눌러도 아무 일이 없는 것보다는
+              갈 데가 있는 편이 낫다.
+            */
+            <a
+              key={item.id}
+              href={linkFor(item.date ?? selected)}
+              /*
+                가로 여백을 음수 마진으로 빼지 않는다 — 스트립 폭보다 넓어져서
+                aside 까지 넘침이 전파된다(좁은 화면에서 6px 씩 밀린다).
+              */
+              className="flex gap-2.5 rounded-md py-1 text-xs hover:bg-fg/[0.07] active:bg-fg/[0.14]"
+            >
               <span className="shrink-0 font-display tabular-nums text-accent">
                 {eventLabel(item)}
               </span>
-              <span className="min-w-0">{item.title}</span>
-            </div>
+              <span className="min-w-0 break-keep">{item.title}</span>
+            </a>
           ))
         )}
+
+        {/* 못 가져온 게 있으면 조용히 넘어가지 않는다 — 빈 날로 보이기 때문이다 */}
+        {trouble ? (
+          <span className="text-[11px] leading-relaxed break-keep text-mid">
+            ⚠ {trouble.label} · {trouble.message}
+          </span>
+        ) : null}
       </div>
     </section>
   );
 }
+

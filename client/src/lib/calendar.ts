@@ -11,7 +11,7 @@ import type { Briefing, ScheduleItem } from "@shared/types";
  *   Date 로 더하고 toISOString() 하면 서울(+09) 자정이 UTC 전날로 밀린다.
  */
 
-export const WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"];
+export const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
 /** 달력 한 칸. */
 export type MonthCell = {
@@ -29,7 +29,7 @@ export type MonthCell = {
  */
 const CELLS = 42;
 
-/** 어느 날이 든 그 주의 월요일. */
+/** 어느 날이든 그 주의 일요일. */
 export function weekStart(date: string): string {
   return shiftISO(date, -weekdayIndex(date));
 }
@@ -45,14 +45,15 @@ function cellsFrom(start: string, count: number, prefix: string): MonthCell[] {
       date,
       day: Number(date.slice(8, 10)),
       inMonth: date.startsWith(prefix),
-      weekend: index % 7 >= 5,
+      // 일요일 시작이라 주말은 양 끝이다 — 가운데 두 칸이 아니다.
+      weekend: index % 7 === 0 || index % 7 === 6,
     };
   });
 }
 
 export function monthGrid(year: number, month: number): MonthCell[] {
   const prefix = `${year}-${String(month).padStart(2, "0")}`;
-  // 1일이 무슨 요일이든 그 주의 월요일부터 시작한다.
+  // 1일이 무슨 요일이든 그 주의 일요일부터 시작한다.
   return cellsFrom(weekStart(`${prefix}-01`), CELLS, prefix);
 }
 

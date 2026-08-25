@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { formatKoreanDate, shiftISO } from "@shared/date";
-import type { Briefing, CalendarEvent } from "@shared/types";
+import type { Briefing } from "@shared/types";
 import {
   CalendarCheck,
   CalendarX,
@@ -8,13 +8,8 @@ import {
   ChevronRight,
   TriangleAlert,
 } from "lucide-react";
-import {
-  describeFailure,
-  fetchCalendarEvents,
-  type CalendarEventsResult,
-  type CalendarFailure,
-} from "../lib/api";
 import type { Config } from "../lib/config";
+import { troubles, useCalendarFeed, type Feed } from "../lib/feed";
 import { Kicker, SCROLL_PANE, Tag } from "../components/ui";
 import {
   eventLabel,
@@ -52,55 +47,20 @@ const RANGES: { id: Range; label: string }[] = [
   { id: "month", label: "월" },
 ];
 
-/**
- * 캘린더에서 실제로 읽어온 일정.
- *
- * "아직 안 붙였다(off)" 와 "붙였는데 비었다(live · 0건)" 와 "가져오다 실패했다"
- * 를 갈라 둔다. 셋 다 화면에는 빈 달력으로 보이지만 사용자가 할 일이 전부
- * 다르다 — 하나로 뭉뚱그리면 주소가 틀린 걸 한가한 달로 읽는다.
- */
-type Feed =
-  | { state: "loading" }
-  | { state: "off" }
-  | { state: "live"; calendars: string[]; events: CalendarEvent[]; failed: CalendarFailure[] }
-  | { state: "error"; message: string };
-
-function useCalendarFeed(config: Config, from: string, to: string): Feed {
-  const [feed, setFeed] = useState<Feed>({ state: "loading" });
-
-  useEffect(() => {
-    let cancelled = false;
-    setFeed({ state: "loading" });
-    void fetchCalendarEvents(config, from, to).then((result) => {
-      if (!cancelled) setFeed(toFeed(result));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [config, from, to]);
-
-  return feed;
-}
-
-function toFeed(result: CalendarEventsResult): Feed {
-  if (result.kind !== "ok") {
-    return { state: "error", message: describeFailure(result) };
-  }
-  if (!result.configured) return { state: "off" };
-  return {
-    state: "live",
-    calendars: result.calendars,
-    events: result.events,
-    failed: result.failed,
-  };
-}
-
 export function ScheduleView({
   briefing,
+  date,
   today,
   config,
 }: {
-  briefing: Briefing;
+  /**
+   * 뉴스 브리핑. **없을 수 있다** — 일정은 캘린더에서 따로 오기 때문에
+   * 그날 브리핑이 안 돌았다고 달력까지 막으면 안 된다.
+   * 캘린더가 안 붙었을 때만 여기 담긴 샘플 일정으로 대신한다.
+   */
+  briefing: Briefing | null;
+  /** 보고 있는 날 (YYYY-MM-DD) */
+  date: string;
   today: string;
   config: Config;
 }) {
@@ -111,7 +71,7 @@ export function ScheduleView({
    * 달과 선택을 따로 들고 있으면 둘이 어긋나는 순간(다른 달 날짜를 눌렀을 때)을
    * 손으로 맞춰줘야 한다.
    */
-  const [anchor, setAnchor] = useState(briefing.date);
+  const [anchor, setAnchor] = useState(date);
   const [range, setRange] = useState<Range>("month");
 
   const { year, month } = monthOf(anchor);
@@ -129,13 +89,17 @@ export function ScheduleView({
   const soon = useCalendarFeed(config, weekStart(today), shiftISO(today, 7));
 
   const live = feed.state === "live";
-  const events = live ? groupByDate(feed.events) : eventsByDate(briefing);
+  const events = live
+    ? groupByDate(feed.events)
+    : briefing
+      ? eventsByDate(briefing)
+      : new Map<string, DayEvent[]>();
   const picked = events.get(anchor) ?? [];
 
   const upcoming =
     soon.state === "live"
       ? soon.events.filter((item) => item.date > today)
-      : briefing.upcoming;
+      : (briefing?.upcoming ?? []);
 
   return (
     // lg:min-h-0 — Home.tsx 와 같은 이유. 본문·스트립을 AppShell <main> 의
@@ -259,15 +223,7 @@ export function ScheduleView({
  * 그 캘린더의 일정이 통째로 사라진 걸 알아챌 방법이 없다.
  */
 function FeedTrouble({ feed }: { feed: Feed }) {
-  const rows =
-    feed.state === "error"
-      ? [{ label: "캘린더", message: feed.message }]
-      : feed.state === "live"
-        ? feed.failed.map((item) => ({
-            label: item.label,
-            message: item.message,
-          }))
-        : [];
+  const rows = troubles(feed);
 
   if (rows.length === 0) return null;
 
@@ -336,7 +292,7 @@ function Grid({
           <span
             key={day}
             className={`text-center text-[11px] tracking-[0.06em] ${
-              index >= 5 ? "text-mid" : "text-dim"
+              index === 0 || index === 6 ? "text-mid" : "text-dim"
             }`}
           >
             {day}
@@ -553,7 +509,7 @@ function WeekStats({
   today,
   soon,
 }: {
-  briefing: Briefing;
+  briefing: Briefing | null;
   today: string;
   soon: Feed;
 }) {
@@ -593,9 +549,10 @@ function countWeek(
   week: MonthCell[],
   today: string,
   soon: Feed,
-  briefing: Briefing,
+  briefing: Briefing | null,
 ): { today: number; week: number; empty: number } {
   if (soon.state !== "live") {
+    if (!briefing) return { today: 0, week: 0, empty: week.length };
     return {
       today: briefing.schedule.length,
       week:

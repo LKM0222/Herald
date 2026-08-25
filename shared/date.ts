@@ -59,7 +59,12 @@ export function shiftISO(date: string, days: number): string {
   return point.toISOString().slice(0, 10);
 }
 
-/** 월요일이 0, 일요일이 6. 주를 월요일로 시작하려고 옮긴 값이다. */
+/**
+ * 일요일이 0, 토요일이 6.
+ *
+ * getUTCDay() 와 같은 값이지만 함수로 남긴다 — 주의 시작 요일은 취향이라
+ * 언젠가 또 바뀐다. 그때 고칠 곳이 여기 하나여야 달력들이 같이 움직인다.
+ */
 export function weekdayIndex(date: string): number {
-  return (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7;
+  return new Date(`${date}T00:00:00Z`).getUTCDay();
 }

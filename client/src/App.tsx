@@ -144,6 +144,22 @@ function BriefingView({
 
   const { briefing } = result;
 
+  /*
+    일정은 브리핑보다 먼저 본다.
+    캘린더는 별개 출처라, 그날 뉴스 브리핑이 없다고 달력까지 막으면
+    홈에서 일정을 눌러 그 날로 들어가는 길이 끊긴다.
+  */
+  if (view === "schedule") {
+    return (
+      <ScheduleView
+        briefing={briefing}
+        date={date}
+        today={today}
+        config={config}
+      />
+    );
+  }
+
   // 데이터가 없는 날. 아직 수집이 안 붙어서 대부분의 날짜가 여기로 온다.
   if (!briefing) {
     return (
@@ -164,10 +180,13 @@ function BriefingView({
   if (view === "news") {
     return <News briefing={briefing} date={date} today={today} />;
   }
-  if (view === "schedule") {
-    return <ScheduleView briefing={briefing} today={today} config={config} />;
-  }
-  return <Home briefing={briefing} date={date === today ? undefined : date} />;
+  return (
+    <Home
+      briefing={briefing}
+      date={date === today ? undefined : date}
+      config={config}
+    />
+  );
 }
 
 function Status({

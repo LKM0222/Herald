@@ -32,13 +32,13 @@ function withFreshTime<T extends { publishedAt: string }>(item: T): T {
 }
 
 /**
- * 이번 주 일곱 칸. 월요일부터 시작한다.
+ * 이번 주 일곱 칸. 일요일부터 시작한다.
  * 캘린더가 붙으면 이 함수가 실제 조회로 바뀐다.
  */
 function sampleWeek(date: string): Briefing["week"] {
-  const monday = shiftISO(date, -weekdayIndex(date));
+  const start = shiftISO(date, -weekdayIndex(date));
   return Array.from({ length: 7 }, (_, index) => {
-    const day = shiftISO(monday, index);
+    const day = shiftISO(start, index);
     return { date: day, count: day === date ? 2 : 0 };
   });
 }

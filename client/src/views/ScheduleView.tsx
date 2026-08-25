@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { formatKoreanDate, shiftISO } from "@shared/date";
 import type { Briefing } from "@shared/types";
 import { CalendarX, ChevronLeft, ChevronRight } from "lucide-react";
-import { Kicker, Tag } from "../components/ui";
+import { Kicker, SCROLL_PANE, Tag } from "../components/ui";
 import {
   eventLabel,
   eventsByDate,
@@ -69,8 +69,13 @@ export function ScheduleView({
     );
 
   return (
-    <div className="flex flex-col gap-8 lg:flex-row lg:gap-10">
-      <div className="flex min-w-0 flex-1 flex-col gap-6">
+    // lg:min-h-0 — Home.tsx 와 같은 이유. 본문·스트립을 AppShell <main> 의
+    // 실제 높이에 맞춰 눌러앉혀야 SCROLL_PANE 의 overflow-y-auto 가 의미를 갖는다.
+    <div className="flex flex-col gap-8 lg:min-h-0 lg:flex-row lg:gap-10">
+      <div
+        data-scrollarea
+        className={`flex min-w-0 flex-1 flex-col gap-6 ${SCROLL_PANE}`}
+      >
         {/*
           좁은 화면에선 조작부를 제목 아래로 내린다. 한 줄에 같이 두면 제목이
           네 줄로 눌린다 — 320px 에서 버튼 셋이 130px 을 가져간다.
@@ -152,7 +157,11 @@ export function ScheduleView({
         </section>
       </div>
 
-      <aside className="flex shrink-0 flex-col gap-7 border-line lg:w-56 lg:border-l lg:pl-6">
+      {/* lg 부터 본문과 따로 스크롤한다(도면: 스트립을 굴려도 본문은 안 따라간다) */}
+      <aside
+        data-scrollarea
+        className={`flex shrink-0 flex-col gap-7 border-line lg:w-56 lg:border-l lg:pl-6 ${SCROLL_PANE}`}
+      >
         <WeekStats briefing={briefing} />
         <ConnectedCalendars />
         <RangePicker value={range} onChange={setRange} />

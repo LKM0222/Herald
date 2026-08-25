@@ -145,3 +145,15 @@ export function Field({
 export const inputClass =
   "min-h-11 w-full rounded-[10px] border border-line bg-surface px-3 text-sm " +
   "outline-none focus-visible:border-accent";
+
+/**
+ * 본문·우측 스트립·설정 서브내비처럼, 나란히 놓인 두 칸이 lg(1024px)부터
+ * 각자 따로 스크롤해야 하는 자리에 붙인다 (Home·ScheduleView·Settings 셋에서 씀).
+ *
+ * min-h-0 가 없으면 flex 자식은 제 내용 높이 밑으로 못 줄어들어
+ * overflow-y-auto 가 있어도 절대 넘치지 않는다 — 그래서 항상 함께 붙인다.
+ * lg 미만에서는 아무 효과가 없다: 그 아래에선 두 칸이 아직 세로로 쌓여 있어
+ * AppShell 의 <main> 하나가 통째로 스크롤을 맡는다.
+ * data-scrollarea 는 index.css 의 스크롤바 스타일을 여기 붙이라는 표시다.
+ */
+export const SCROLL_PANE = "lg:min-h-0 lg:overflow-y-auto";

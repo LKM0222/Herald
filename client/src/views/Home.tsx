@@ -3,7 +3,7 @@ import { formatKoreanDate, formatRelative } from "@shared/date";
 import type { Briefing, NewsItem } from "@shared/types";
 import { Bookmark, ExternalLink, Search, Zap } from "lucide-react";
 import { Launchpad } from "../components/Launchpad";
-import { Kicker, LinkButton, PendingButton } from "../components/ui";
+import { Kicker, LinkButton, PendingButton, SCROLL_PANE } from "../components/ui";
 import {
   eventLabel,
   eventsByDate,
@@ -32,8 +32,14 @@ export function Home({
   const leads = briefing.news.filter((item) => item.priority === 1);
 
   return (
-    <div className="flex flex-col gap-8 lg:flex-row lg:gap-10">
-      <div className="flex min-w-0 flex-1 flex-col gap-6">
+    // lg:min-h-0 — 아래 두 칸(본문·스트립)이 AppShell 의 <main> 높이에 그대로
+    // 눌러앉게 한다. 없으면 이 줄이 내용 높이만큼 늘어나 버려 두 칸 다 넘칠 일이
+    // 없어지고, SCROLL_PANE 의 overflow-y-auto 가 죽은 코드가 된다.
+    <div className="flex flex-col gap-8 lg:min-h-0 lg:flex-row lg:gap-10">
+      <div
+        data-scrollarea
+        className={`flex min-w-0 flex-1 flex-col gap-6 ${SCROLL_PANE}`}
+      >
         <div className="flex flex-col gap-1.5">
           <Kicker>오늘의 Herald</Kicker>
           <h2 className="max-w-[32ch] font-display text-2xl leading-tight sm:text-[27px]">
@@ -46,8 +52,14 @@ export function Home({
         <ContinueSection briefing={briefing} />
       </div>
 
-      {/* 우측 스트립 — 모바일에선 본문 아래로 내려온다 */}
-      <aside className="flex shrink-0 flex-col gap-7 border-line lg:w-56 lg:border-l lg:pl-6">
+      {/*
+        우측 스트립 — 모바일에선 본문 아래로 내려온다. lg 부터는 SCROLL_PANE 으로
+        본문과 따로 스크롤한다(도면: 본문을 굴려도 스트립은 안 따라간다).
+      */}
+      <aside
+        data-scrollarea
+        className={`flex shrink-0 flex-col gap-7 border-line lg:w-56 lg:border-l lg:pl-6 ${SCROLL_PANE}`}
+      >
         <Stats briefing={briefing} />
         <MiniCalendar briefing={briefing} date={date} />
         {/*

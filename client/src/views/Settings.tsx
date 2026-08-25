@@ -33,6 +33,7 @@ import {
   inputClass,
   Kicker,
   PendingButton,
+  SCROLL_PANE,
   Tag,
 } from "../components/ui";
 
@@ -59,8 +60,14 @@ export function Settings({
   onConfigChanged: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-8 lg:flex-row lg:gap-10">
-      <nav className="hidden w-40 shrink-0 flex-col gap-0.5 lg:flex">
+    // lg:min-h-0 — Home·ScheduleView 와 같은 이유. 서브내비·본문을
+    // AppShell <main> 의 실제 높이에 맞춰야 아래 SCROLL_PANE 이 동작한다.
+    <div className="flex flex-col gap-8 lg:min-h-0 lg:flex-row lg:gap-10">
+      {/* 4B: 서브내비도 lg 부터 본문과 따로 스크롤한다 */}
+      <nav
+        data-scrollarea
+        className={`hidden w-40 shrink-0 flex-col gap-0.5 lg:flex ${SCROLL_PANE}`}
+      >
         <span className="mb-2 px-3">
           <Kicker>설정</Kicker>
         </span>
@@ -76,7 +83,10 @@ export function Settings({
         ))}
       </nav>
 
-      <div className="flex min-w-0 flex-1 flex-col gap-8">
+      <div
+        data-scrollarea
+        className={`flex min-w-0 flex-1 flex-col gap-8 ${SCROLL_PANE}`}
+      >
         <AppearanceSection />
         <SourcesSection config={config} />
         <SummarySection config={config} />

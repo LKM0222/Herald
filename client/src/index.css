@@ -135,3 +135,65 @@ body {
   text-transform: uppercase;
   color: var(--neutral-600);
 }
+
+/*
+ * PC 전용 화면 고정 틀 (AppShell 이 md 이상에서 두른다).
+ * 헤더·좌측 내비는 이 틀 밖의 흐름이라 저절로 붙박이가 되고, 안쪽은
+ * overflow:hidden 이라 문서 자체는 스크롤하지 않는다 — 대신 본문 쪽에
+ * data-scrollarea 를 건 영역들이 각자 굴러간다.
+ *
+ * ⚠ 모바일(md 미만)에서는 절대 걸면 안 된다. 스크롤 속에 스크롤이 생겨
+ *   손가락으로 못 쓰게 되고, 주소창이 접혔다 펴지며 100vh 가 튀는 문제도
+ *   겹친다. 그래서 페이지 전체가 굴러가는 지금 방식을 그대로 둔다.
+ *
+ * dvh 를 우선 쓰되 지원 안 하는 브라우저를 위해 vh 를 먼저 깔아 둔다 —
+ * 무효한 100dvh 선언은 파싱에서 버려지고 앞의 100vh 값이 그대로 남는다.
+ * (h-screen + h-dvh 조합을 Tailwind 유틸로 쓰지 않는 이유: v4 는 소스에 쓴
+ * 순서가 아니라 내부 규칙으로 정렬해서 어느 선언이 나중에 이기는지 보장이 안 된다.)
+ *
+ * ⚠ flex:none 이 반드시 있어야 한다. 이 요소는 #root(flex 컬럼)의 자식이라
+ *   Tailwind 의 flex-1(= flex:1 1 0%)이 걸려 있는데, flex-basis 가 auto 가
+ *   아니면 flexbox 는 width/height 를 아예 무시하고 그 basis 로만 크기를
+ *   정한다 — 그러면 100dvh 를 적어도 조용히 씹혀서 내용 높이만큼 늘어난다.
+ *   flex:none 으로 flex-basis 를 auto 로 되돌려야 height 선언이 실제로 먹는다.
+ */
+@media (min-width: 768px) {
+  .app-shell-frame {
+    flex: none;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+  }
+}
+
+/*
+ * 영역별 독립 스크롤(본문 · 우측 스트립 · 설정 서브내비)에 붙이는 스크롤바.
+ * 도면(25~30줄) 값을 그대로 옮기되, 색은 도면 전용 --color-neutral-600 등이
+ * 아니라 이 파일 위쪽에 이미 있는 --neutral-600 · --divider · --accent 로
+ * 바꿔 낀다 — 그래야 팔레트·밝기가 바뀔 때 스크롤바 색도 같이 따라간다.
+ */
+[data-scrollarea] {
+  scrollbar-width: thin;
+  scrollbar-color: var(--neutral-600) transparent;
+  scrollbar-gutter: stable;
+}
+[data-scrollarea]::-webkit-scrollbar {
+  width: 12px;
+}
+[data-scrollarea]::-webkit-scrollbar-track {
+  background: transparent;
+  border-left: 1px solid var(--divider);
+}
+[data-scrollarea]::-webkit-scrollbar-thumb {
+  background: var(--neutral-600);
+  border: 4px solid transparent;
+  background-clip: content-box;
+}
+[data-scrollarea]::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+  background-clip: content-box;
+}
+[data-scrollarea]::-webkit-scrollbar-thumb:active {
+  background: var(--accent-700);
+  background-clip: content-box;
+}

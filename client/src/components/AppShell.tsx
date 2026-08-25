@@ -28,8 +28,13 @@ export function AppShell({
   const mobileViews = MOBILE_ORDER.map((id) => VIEWS.find((v) => v.id === id)!);
 
   return (
-    <div className="mx-auto flex w-full max-w-[1152px] flex-1 flex-col">
-      <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6">
+    /*
+     * app-shell-frame(index.css) 이 md 이상에서만 높이를 뷰포트에 고정하고
+     * overflow:hidden 을 건다 — 그 아래는 지금처럼 페이지 전체가 스크롤된다.
+     * 헤더는 이 틀의 평범한 flex 자식이라 저절로 붙박이가 된다.
+     */
+    <div className="app-shell-frame mx-auto flex w-full max-w-[1152px] flex-1 flex-col">
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6">
         {/* 좁은 화면에선 날짜가 줄어들며 버틴다 — 브레이크포인트로 끊지 않는다 */}
         <div className="flex min-w-0 items-center gap-3">
           <Logo className="h-6 w-auto shrink-0" />
@@ -57,8 +62,11 @@ export function AppShell({
         </div>
       </header>
 
-      <div className="flex flex-1">
-        {/* 사이드바 — PC 전용 */}
+      {/* md 이상에서 이 줄 자체가 남은 높이를 다 차지해야(min-h-0) 아래 main 의
+          overflow-y-auto 가 실제로 넘친다 — 없으면 flex 자식은 내용 높이 밑으로
+          못 줄어들어 바깥 틀의 overflow:hidden 이 그냥 잘라먹는다. */}
+      <div className="flex flex-1 md:min-h-0">
+        {/* 사이드바 — PC 전용. 고정이라 md:min-h-0 을 안 주고 shrink-0 만 둔다 */}
         <nav className="hidden w-44 shrink-0 flex-col gap-0.5 border-r border-line py-4 md:flex">
           {VIEWS.map((item) => (
             <NavItem key={item.id} item={item} current={view} date={date} />
@@ -72,8 +80,18 @@ export function AppShell({
           ) : null}
         </nav>
 
-        {/* 본문 — 하단 탭바에 가리지 않도록 모바일에서 아래 여백을 준다 */}
-        <main className="min-w-0 flex-1 px-4 pb-24 pt-5 sm:px-6 md:pb-10">
+        {/*
+          본문 — 하단 탭바에 가리지 않도록 모바일에서 아래 여백을 준다.
+          md 이상에선 이 <main> 자체가 하나의 스크롤 영역이 된다(뷰가 본문·스트립을
+          아직 나란히 쪼개지 않는 md~lg 구간까지 담당). lg 부터는 각 뷰가 내부에서
+          본문·스트립을 SCROLL_PANE(ui.tsx)으로 따로 쪼개고, 그땐 이 높이에
+          정확히 맞춰 들어가 있어서(align-items:stretch) 이 main 자체는 넘칠 게
+          없어져 스크롤바가 저절로 사라진다 — 그래서 lg 이상을 따로 갈라 끄지 않아도 된다.
+        */}
+        <main
+          data-scrollarea
+          className="min-w-0 flex-1 px-4 pb-24 pt-5 sm:px-6 md:flex md:min-h-0 md:overflow-y-auto md:pb-10"
+        >
           {children}
         </main>
       </div>

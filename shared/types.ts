@@ -1,6 +1,21 @@
 /** 1 = 먼저 볼 것, 2 = 훑어볼 것, 3 = 참고 */
 export type Priority = 1 | 2 | 3;
 
+/**
+ * 매일 몇 시에 요약을 돌릴지.
+ *
+ * ⚠ **자동으로 토큰을 쓰는 스위치는 이것 하나뿐이다.** 그래서 기본이 꺼짐이다.
+ *   켜짐을 기본으로 두면 배포한 다음 날 아침, 아무도 시키지 않았는데 과금이 시작된다.
+ *
+ * 시각은 **한국 시간**이다. 서버 컨테이너는 UTC 로 도는데 사용자가 고르는 건
+ * 자기가 일어나는 시각이지 UTC 가 아니다. 변환은 서버가 한다 (scheduler.ts).
+ */
+export type NewsSchedule = {
+  enabled: boolean;
+  /** "HH:MM" · 한국 시간 */
+  at: string;
+};
+
 export type NewsItem = {
   id: string;
   /**

@@ -24,7 +24,11 @@ import {
   toggleSubscription,
   type SaveSecretResult,
 } from "../lib/api";
-import type { CalendarSubscription, SecretStatus } from "@shared/types";
+import type {
+  CalendarSubscription,
+  NewsSchedule,
+  SecretStatus,
+} from "@shared/types";
 import { saveConfig, type Config } from "../lib/config";
 import {
   applyPalette,
@@ -193,6 +197,7 @@ function AppearanceSection() {
 /** 어느 매체를 모을지. 저장은 서버에 하고, 기기가 바뀌어도 따라간다. */
 function SourcesSection({ config }: { config: Config }) {
   const [enabled, setEnabled] = useState<string[] | null>(null);
+  const [schedule, setSchedule] = useState<NewsSchedule | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -200,32 +205,52 @@ function SourcesSection({ config }: { config: Config }) {
     let cancelled = false;
     void fetchSettings(config).then((result) => {
       if (cancelled) return;
-      if (result.kind === "ok") setEnabled(result.enabledSources);
-      else setError(describe(result));
+      if (result.kind === "ok") {
+        setEnabled(result.enabledSources);
+        setSchedule(result.schedule);
+      } else setError(describe(result));
     });
     return () => {
       cancelled = true;
     };
   }, [config]);
 
-  async function toggle(id: string) {
-    if (!enabled) return;
-    const next = enabled.includes(id)
-      ? enabled.filter((value) => value !== id)
-      : [...enabled, id];
+  /**
+   * 소스든 시각이든 저장은 한 곳으로 모은다.
+   *
+   * 서버가 설정을 통째로 덮어쓰기 때문에 **둘을 항상 같이 보내야 한다.**
+   * 따로 보내면 나중에 저장한 쪽이 앞의 것을 지운다.
+   */
+  async function save(nextSources: string[], nextSchedule: NewsSchedule) {
+    if (!enabled || !schedule) return;
+    const before = { sources: enabled, schedule };
 
     // 낙관적으로 먼저 반영한다 — 체크박스가 늦게 움직이면 안 눌린 줄 안다.
-    setEnabled(next);
+    setEnabled(nextSources);
+    setSchedule(nextSchedule);
     setSaving(true);
-    const result = await saveSettings(config, next);
+    const result = await saveSettings(config, nextSources, nextSchedule);
     setSaving(false);
+
     if (result.kind === "ok") {
       setEnabled(result.enabledSources);
+      setSchedule(result.schedule);
       setError(null);
     } else {
-      setEnabled(enabled); // 되돌린다
+      setEnabled(before.sources); // 되돌린다
+      setSchedule(before.schedule);
       setError(describe(result));
     }
+  }
+
+  function toggle(id: string) {
+    if (!enabled || !schedule) return;
+    void save(
+      enabled.includes(id)
+        ? enabled.filter((value) => value !== id)
+        : [...enabled, id],
+      schedule,
+    );
   }
 
   const count = enabled?.length ?? 0;
@@ -235,9 +260,24 @@ function SourcesSection({ config }: { config: Config }) {
       id="sources"
       title="뉴스 소스"
       note={`${CATALOG.length}곳 중 ${count}곳 사용 중 · 서버에 저장되어 기기가 바뀌어도 따라갑니다`}
-      aside={<Tag>{saving ? "저장 중…" : "수집 준비 중"}</Tag>}
+      aside={
+        <Tag>
+          {saving
+            ? "저장 중…"
+            : schedule?.enabled
+              ? `매일 ${schedule.at}`
+              : "자동 실행 꺼짐"}
+        </Tag>
+      }
     >
       {error ? <Notice tone="error">{error}</Notice> : null}
+
+      {schedule ? (
+        <AutoRun
+          schedule={schedule}
+          onChange={(next) => void save(enabled ?? [], next)}
+        />
+      ) : null}
 
       {enabled === null && !error ? (
         <p className="text-sm text-dim">불러오는 중…</p>
@@ -273,10 +313,72 @@ function SourcesSection({ config }: { config: Config }) {
       )}
 
       <p className="text-xs leading-relaxed text-dim">
-        Anthropic 은 공식 RSS 가 없어 목록에 없습니다. 수집은 아직 붙지 않아
-        지금은 선택만 저장됩니다.
+        Anthropic 은 공식 RSS 가 없어 목록에 없습니다.
       </p>
     </Section>
+  );
+}
+
+/**
+ * 매일 몇 시에 요약을 돌릴지.
+ *
+ * ⚠ **이 화면에서 유일하게 돈이 나가는 스위치다.** 켜면 매일 아침 서버가
+ *   알아서 Anthropic API 를 부른다. 그래서 켜짐이 기본이 아니고, 무슨 일이
+ *   벌어지는지를 화면에 적어 둔다 — 나중에 "왜 과금됐지" 를 묻지 않도록.
+ */
+function AutoRun({
+  schedule,
+  onChange,
+}: {
+  schedule: NewsSchedule;
+  onChange: (next: NewsSchedule) => void;
+}) {
+  return (
+    <div
+      className={`flex flex-col gap-3 rounded-xl border px-4 py-3.5 ${
+        schedule.enabled ? "border-accent bg-accent-soft" : "border-line"
+      }`}
+    >
+      <label className="flex cursor-pointer items-start gap-3">
+        <input
+          type="checkbox"
+          checked={schedule.enabled}
+          onChange={(event) =>
+            onChange({ ...schedule, enabled: event.target.checked })
+          }
+          className="mt-1 size-4 shrink-0 accent-[var(--accent)]"
+        />
+        <span className="min-w-0 flex-1">
+          <span className="text-sm font-medium">매일 자동으로 요약</span>
+          <span className="mt-0.5 block text-xs leading-snug text-dim">
+            정한 시각에 서버가 기사를 모아 요약합니다. 앱을 열어두지 않아도
+            됩니다. 요약할 때만 API 를 쓰고, 이미 요약한 기사는 건너뜁니다.
+          </span>
+        </span>
+      </label>
+
+      {schedule.enabled ? (
+        <div className="flex flex-wrap items-end gap-3 pl-7">
+          <Field label="실행 시각 (한국 시간)">
+            <input
+              type="time"
+              value={schedule.at}
+              /* 시각 칸은 비울 수 있다. 빈 값을 그대로 저장하면 서버가
+                 기본값으로 되돌려 화면과 어긋난다 — 아예 안 보낸다. */
+              onChange={(event) =>
+                event.target.value &&
+                onChange({ ...schedule, at: event.target.value })
+              }
+              className={`${inputClass} w-32`}
+            />
+          </Field>
+          <p className="pb-2 text-xs leading-relaxed text-dim">
+            서버가 꺼져 있어 그 시각을 놓치면, 다시 켜졌을 때 그날 것을 한 번
+            만듭니다.
+          </p>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

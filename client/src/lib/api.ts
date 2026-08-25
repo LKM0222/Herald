@@ -2,6 +2,7 @@ import type {
   Briefing,
   CalendarEvent,
   CalendarSubscription,
+  NewsSchedule,
   SecretStatus,
 } from "@shared/types";
 import type { Config } from "./config";
@@ -18,7 +19,10 @@ export type Failure =
 export type Result<T> = ({ kind: "ok" } & T) | Failure;
 
 export type BriefingResult = Result<{ briefing: Briefing | null }>;
-export type SettingsResult = Result<{ enabledSources: string[] }>;
+export type SettingsResult = Result<{
+  enabledSources: string[];
+  schedule: NewsSchedule;
+}>;
 
 /**
  * 모든 요청의 공통 처리.
@@ -91,28 +95,42 @@ export async function fetchBriefing(
   return { kind: "ok", briefing: body.briefing };
 }
 
+type SettingsBody = {
+  settings: { enabledSources: string[]; schedule: NewsSchedule };
+};
+
 export async function fetchSettings(config: Config): Promise<SettingsResult> {
   const response = await request(config, "/api/settings");
   if (isFailure(response)) return response;
-  const body = (await response.json()) as {
-    settings: { enabledSources: string[] };
+  const body = (await response.json()) as SettingsBody;
+  return {
+    kind: "ok",
+    enabledSources: body.settings.enabledSources,
+    schedule: body.settings.schedule,
   };
-  return { kind: "ok", enabledSources: body.settings.enabledSources };
 }
 
+/**
+ * ⚠ 서버는 받은 것을 **통째로** 저장한다. 둘 중 하나만 보내면 나머지가 사라진다.
+ *   그래서 인자 두 개를 모두 필수로 뒀다 — 부르는 쪽이 지금 값을 들고 있게 강제한다.
+ *   소스 체크박스만 건드렸는데 켜둔 자동 실행이 꺼지는 사고를 막는다.
+ */
 export async function saveSettings(
   config: Config,
   enabledSources: string[],
+  schedule: NewsSchedule,
 ): Promise<SettingsResult> {
   const response = await request(config, "/api/settings", {
     method: "POST",
-    body: JSON.stringify({ enabledSources }),
+    body: JSON.stringify({ enabledSources, schedule }),
   });
   if (isFailure(response)) return response;
-  const body = (await response.json()) as {
-    settings: { enabledSources: string[] };
+  const body = (await response.json()) as SettingsBody;
+  return {
+    kind: "ok",
+    enabledSources: body.settings.enabledSources,
+    schedule: body.settings.schedule,
   };
-  return { kind: "ok", enabledSources: body.settings.enabledSources };
 }
 
 /** 비밀번호가 설정돼 있는지. 로그인 전에 물어야 해서 인증이 없다. */

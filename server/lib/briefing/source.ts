@@ -1,14 +1,21 @@
 import { shiftISO, todayISO, weekdayIndex } from "@shared/date";
 import type { Briefing } from "@shared/types";
+import { loadBriefing } from "./store";
 
 /**
  * 브리핑 한 건을 가져온다. 없으면 null.
  *
- * ★ 실데이터 교체 지점 ★
- * 지금은 더미를 돌려주지만, 나중에 여기만 DB(SQLite) 조회로 바꾸면 된다.
- * 화면 컴포넌트는 Briefing 타입만 알고 출처를 모르므로 손대지 않는다.
+ * 실제로 만들어진 게 있으면 그걸 준다 — 자동 실행(scheduler.ts)이 저장해 둔 것이다.
+ * 없으면 **오늘 날짜에 한해** 더미를 준다. 자동 실행을 아직 안 켰거나 켠 첫날
+ * 아침이 되기 전이면 저장된 게 없는데, 그때 빈 화면을 주면 앱이 고장 난 것처럼 보인다.
+ *
+ * ⚠ 더미에는 sample: true 가 붙어 있다. 화면이 그걸 드러내야
+ *   "오늘 뉴스가 이것뿐인가" 로 잘못 읽히지 않는다.
  */
 export async function getBriefing(date: string): Promise<Briefing | null> {
+  const saved = loadBriefing(date);
+  if (saved) return saved;
+
   if (date !== todayISO()) return null;
   return {
     ...SAMPLE,

@@ -32,6 +32,20 @@ services:
     depends_on:
       init:
         condition: service_completed_successfully
+    # ⚠ 살아 있는지 보려고만 두는 게 아니다. Next 는 instrumentation.ts 를
+    #   **첫 요청이 올 때** 실행한다 — 실제로 띄워 보고 확인했다. 그 안에서
+    #   매일 요약을 돌리는 타이머가 시작되므로, 아무도 앱을 안 열면 타이머
+    #   자체가 안 돈다. 이게 뜨자마자 한 번 두드려 그 구멍을 막는다.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 60s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     restart: unless-stopped
 
   caddy:

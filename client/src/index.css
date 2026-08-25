@@ -221,6 +221,57 @@ html.news-snap,
 }
 
 /*
+ * 스크롤바를 지운다 (도면 5A).
+ *
+ * 스크롤바는 "얼마나 남았나" 를 픽셀로 말한다. 그런데 이 화면에서 알고 싶은
+ * 건 거리가 아니라 몇 층 중 몇 번째냐다 — 칸이 화면 단위로 끊겨서 픽셀은
+ * 아무 뜻이 없다. 그 자리를 오른쪽 도트(News.tsx 의 TierDots)가 대신한다.
+ *
+ * ⚠ 스냅을 걸 때와 똑같이 두 군데에 다 건다 — md 이상은 <main>, 그 아래는
+ *   문서다. 폰의 떠 있는 스크롤바는 원래 자리를 안 먹지만, 좁게 줄인 PC
+ *   브라우저에서는 문서 쪽에 진짜 막대가 선다.
+ * ⚠ scrollbar-gutter 도 같이 풀어야 한다. 위의 [data-scrollarea] 가 stable 로
+ *   잡아 둬서, 막대만 감추면 12px 짜리 빈 홈이 오른쪽에 그대로 남는다.
+ * ⚠ 감추는 건 막대뿐이다. overflow 를 hidden 으로 막으면 스크롤이 죽고
+ *   스냅도 같이 죽는다.
+ */
+html.news-snap,
+.news-snap main[data-scrollarea] {
+  scrollbar-width: none;
+  scrollbar-gutter: auto;
+  -ms-overflow-style: none;
+}
+html.news-snap::-webkit-scrollbar,
+.news-snap main[data-scrollarea]::-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * 도트는 6px 이라 손가락으로 못 누른다. 보이는 크기는 도면대로 두고 누르는
+ * 자리만 넓힌다 — CLAUDE.md 가 조밀한 컨트롤도 40px 밑으로 내리지 말라고
+ * 못박아 뒀다. 레이아웃을 밀지 않도록 가짜 요소로 덮어 늘린다.
+ *
+ * ⚠ 다만 40px 을 다 채우지는 못한다. 사방이 이미 남의 자리다:
+ *   · 세로 — 도트 사이 간격이 8px 뿐이라 4px 넘게 늘리면 옆 도트와 겹치고,
+ *     그러면 도트 사이를 눌렀을 때 어느 층으로 갈지가 DOM 순서로 정해진다.
+ *   · 왼쪽 — 본문 여백이 16~24px 뿐이다. 여기로 밀고 들어가면 2층 행 끝의
+ *     원문 버튼(40px)을 위에서 덮어, 그 버튼 오른쪽 끝이 안 눌린다.
+ *     도트는 fixed + z-10 이라 항상 이긴다. 실제로 640~767px 구간에서
+ *     11px 을 잡아먹는 걸 확인하고 좁혔다.
+ *   그래서 바깥(오른쪽)으로만 화면 끝까지 늘리고 안쪽은 2px 만 준다.
+ *   도트는 보조 수단이다 — 굴려서도 똑같이 갈 수 있으니, 목표 크기를
+ *   채우자고 진짜 링크를 죽이지 않는다.
+ */
+.news-dot {
+  position: relative;
+}
+.news-dot::before {
+  content: "";
+  position: absolute;
+  inset: -4px -12px -4px -2px;
+}
+
+/*
  * 하단 탭바가 실제로 덮는 높이 — TabItem 의 min-h-14(56px) + nav 의 border-t 1px.
  * ⚠ 56 으로 적으면 마지막 칸 바닥 1px 이 탭바 뒤로 들어간다. 눈에는 잘 안 띄지만
  *   스크롤 끝과 마지막 스냅 지점이 어긋나서 끝에서 미세하게 튕긴다.

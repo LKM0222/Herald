@@ -432,19 +432,26 @@ function SkimList({ items }: { items: NewsItem[] }) {
   );
 }
 
-/** 3층 — 접어둔다. 열기 전엔 건수만 보인다. */
+/**
+ * 3층 — 접을 수 있지만 열어 둔다.
+ *
+ * 예전엔 접힌 채로 시작했다. 그땐 이 층이 앞 층들 밑에 딸린 꼬리였고, 접어두면
+ * 스크롤이 그만큼 짧아지는 이득이 있었다. 지금은 한 층이 화면을 통째로 쓴다 —
+ * 접어두면 "펼치기" 한 줄만 놓인 빈 화면 한 장을 넘겨야 한다(도면 5A 도
+ * 펼친 상태로 그려져 있다). 접는 것 자체는 남긴다. 건수가 많은 날이 있다.
+ */
 function ReferenceFold({
   tier,
 }: {
   tier: { no: string; label: string; items: NewsItem[] };
 }) {
   return (
-    <details className="group">
+    <details className="group" open>
       <summary className="flex cursor-pointer list-none items-center gap-2.5 py-1">
         <h3 className="font-display text-sm uppercase tracking-[0.1em] text-dim">
-          {tier.no} · {tier.label}
+          {tier.no} · {tier.label}{" "}
+          <span className="text-dim">{tier.items.length}건</span>
         </h3>
-        <span className="text-xs text-dim">{tier.items.length}건 · 접힘</span>
         <span className="h-px flex-1 bg-line" />
         <span className="flex items-center gap-1 text-[13px] text-accent">
           <ChevronDown

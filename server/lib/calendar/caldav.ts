@@ -365,8 +365,24 @@ export type Probe = {
   /** REPORT 가 돌려준 응답 줄 수. 이게 0 이면 서버가 아예 안 준 것이고,
    *  0 이 아닌데 위 숫자가 0 이면 우리가 못 꺼낸 것이다. */
   reportRows: number;
+  /** 첫 줄의 **키 이름과 타입만**. 값은 담지 않는다 — 진단이 일정 덤프가 되면 안 된다. */
+  shape?: string[];
   error?: string;
 };
+
+/** 값은 빼고 구조만 적는다. `이름:타입` 또는 `이름:{자식키…}` 꼴. */
+function describeShape(value: unknown, depth = 0): string[] {
+  if (value === null || typeof value !== "object") return [];
+  return Object.entries(value as Record<string, unknown>).map(([key, child]) => {
+    if (child === null || typeof child !== "object") {
+      const size = typeof child === "string" ? `(${child.length}자)` : "";
+      return `${key}:${typeof child}${size}`;
+    }
+    if (Array.isArray(child)) return `${key}:배열[${child.length}]`;
+    if (depth >= 2) return `${key}:객체`;
+    return `${key}:{${describeShape(child, depth + 1).join(" ")}}`;
+  });
+}
 
 export async function probeCalendar(
   credentials: Credentials,
@@ -411,6 +427,7 @@ export async function probeCalendar(
     });
     const rows = responsesOf(all);
     result.reportRows = rows.length;
+    if (rows[0]) result.shape = describeShape(rows[0]);
     result.withoutRange = rows.filter((response) => {
       const data = textOf(propsOf(response)["calendar-data"]);
       return Boolean(data && data.includes("BEGIN:VEVENT"));

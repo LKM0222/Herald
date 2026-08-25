@@ -309,7 +309,20 @@ function utcStamp(date: string, endOfDay = false): string {
 }
 
 /**
+ * 한 번에 본문을 요청할 개수.
+ *
+ * 다 몰아넣으면 요청 XML 이 길어지고 서버가 잘라낼 수 있다. 나눠도 왕복은
+ * 몇 번 안 되니 안전한 쪽을 고른다.
+ */
+const MULTIGET_BATCH = 50;
+
+/**
  * 기간 안의 일정을 ICS 원문으로 가져온다.
+ *
+ * ⚠ 두 번에 나눠 받는다. 네이버는 calendar-query 에 **200 을 주면서 prop 을 비워**
+ *   보낸다 — 어떤 일정이 걸리는지(href)는 알려주는데 본문은 안 준다.
+ *   그래서 1) 질의로 대상을 고르고 2) calendar-multiget 으로 본문을 받는다.
+ *   한 건씩 GET 해도 되지만 그러면 39건에 39번 왕복한다.
  *
  * 반복 일정은 여기서 펼치지 않는다. 서버는 RRULE 이 붙은 원본을 그대로 주고,
  * 펼치는 건 파서 몫이다 — 서버마다 펼쳐주는 정도가 달라서 믿을 수 없다.
@@ -320,13 +333,13 @@ export async function fetchEventData(
   from: string,
   to: string,
 ): Promise<string[]> {
-  const doc = await dav(credentials, {
+  const listing = await dav(credentials, {
     method: "REPORT",
     url: calendarUrl,
     depth: "1",
     body: `<?xml version="1.0" encoding="utf-8"?>
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
-  <d:prop><d:getetag/><c:calendar-data/></d:prop>
+  <d:prop><d:getetag/></d:prop>
   <c:filter>
     <c:comp-filter name="VCALENDAR">
       <c:comp-filter name="VEVENT">
@@ -337,12 +350,54 @@ export async function fetchEventData(
 </c:calendar-query>`,
   });
 
+  const hrefs = responsesOf(listing)
+    .map((response) => hrefOf(response.href))
+    .filter((href): href is string => Boolean(href))
+    // 컬렉션 자신이 섞여 오는 서버가 있다. 끝이 / 면 일정이 아니다.
+    .filter((href) => !href.endsWith("/"));
+
+  const out: string[] = [];
+  for (let at = 0; at < hrefs.length; at += MULTIGET_BATCH) {
+    out.push(
+      ...(await multiget(credentials, calendarUrl, hrefs.slice(at, at + MULTIGET_BATCH))),
+    );
+  }
+  return out;
+}
+
+/** href 목록의 본문을 한 번에 받는다. */
+async function multiget(
+  credentials: Credentials,
+  calendarUrl: string,
+  hrefs: string[],
+): Promise<string[]> {
+  if (hrefs.length === 0) return [];
+
+  const doc = await dav(credentials, {
+    method: "REPORT",
+    url: calendarUrl,
+    depth: "1",
+    body: `<?xml version="1.0" encoding="utf-8"?>
+<c:calendar-multiget xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:prop><c:calendar-data/></d:prop>
+${hrefs.map((href) => `  <d:href>${escapeXml(href)}</d:href>`).join("\n")}
+</c:calendar-multiget>`,
+  });
+
   const out: string[] = [];
   for (const response of responsesOf(doc)) {
     const data = textOf(propsOf(response)["calendar-data"]);
     if (data && data.includes("BEGIN:VEVENT")) out.push(data);
   }
   return out;
+}
+
+/** href 는 서버가 준 값이라 그대로 믿지 않는다. XML 에 넣기 전에 막는다. */
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 /**
@@ -367,10 +422,6 @@ export type Probe = {
   reportRows: number;
   /** 첫 줄의 **키 이름과 타입만**. 값은 담지 않는다 — 진단이 일정 덤프가 되면 안 된다. */
   shape?: string[];
-  /** calendar-multiget 으로 본문을 받아왔는가 (앞의 몇 건만 시험) */
-  multiget?: number;
-  /** 리소스 URL 을 그냥 GET 했을 때. `상태/길이/VEVENT여부` */
-  plainGet?: string;
   error?: string;
 };
 
@@ -433,38 +484,13 @@ export async function probeCalendar(
     result.reportRows = rows.length;
     if (rows[0]) result.shape = describeShape(rows[0]);
 
-    // 네이버는 REPORT 에 200 을 주면서 prop 을 비워 보낸다. 본문을 받을 다른 길을 잰다.
     const hrefs = rows
       .map((row) => hrefOf(row.href))
       .filter((href): href is string => Boolean(href))
-      .slice(0, 5);
-
-    if (hrefs.length > 0) {
-      const origin = originOf(credentials);
-      const multi = await dav(credentials, {
-        method: "REPORT",
-        url: calendar.url,
-        depth: "1",
-        body: `<?xml version="1.0" encoding="utf-8"?>
-<c:calendar-multiget xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
-  <d:prop><c:calendar-data/></d:prop>
-${hrefs.map((href) => `  <d:href>${href}</d:href>`).join("\n")}
-</c:calendar-multiget>`,
-      });
-      result.multiget = responsesOf(multi).filter((row) => {
-        const data = textOf(propsOf(row)["calendar-data"]);
-        return Boolean(data && data.includes("BEGIN:VEVENT"));
-      }).length;
-
-      const direct = await fetch(absolute(hrefs[0], origin), {
-        headers: { Authorization: authHeader(credentials) },
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
-      const body = await direct.text();
-      result.plainGet = `${direct.status}/${body.length}자/${
-        body.includes("BEGIN:VEVENT") ? "VEVENT있음" : "VEVENT없음"
-      }`;
-    }
+      .filter((href) => !href.endsWith("/"));
+    result.withoutRange = (
+      await multiget(credentials, calendar.url, hrefs.slice(0, MULTIGET_BATCH))
+    ).length;
     result.withoutRange = rows.filter((response) => {
       const data = textOf(propsOf(response)["calendar-data"]);
       return Boolean(data && data.includes("BEGIN:VEVENT"));

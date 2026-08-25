@@ -1,6 +1,7 @@
 import type { NewsItem } from "@shared/types";
 import { readSettings } from "../settings";
 import { collect, type SourceReport } from "./collect";
+import type { OriginReport } from "./origin";
 import { loadSummarized } from "./seen";
 
 /**
@@ -30,6 +31,10 @@ export type PendingResult = {
   skipped: number;
   /** 전체 상한에 걸려 버린 건수 */
   dropped: number;
+  /** 같은 기사라 합친 건수 */
+  merged: number;
+  /** 원본 주소 복원 결과 */
+  origins: OriginReport;
   hours: number;
 };
 
@@ -48,10 +53,13 @@ export async function pending(
   const enabled = options.enabled ?? readSettings().enabledSources;
   const hours = Math.min(options.hours ?? WINDOW_HOURS, MAX_CATCHUP_HOURS);
 
-  const { items, reports, dropped } = await collect({ enabled, hours });
+  const { items, reports, dropped, merged, origins } = await collect({
+    enabled,
+    hours,
+  });
 
   if (options.includeSummarized) {
-    return { items, reports, skipped: 0, dropped, hours };
+    return { items, reports, skipped: 0, dropped, merged, origins, hours };
   }
 
   const done = loadSummarized();
@@ -62,6 +70,8 @@ export async function pending(
     reports,
     skipped: items.length - fresh.length,
     dropped,
+    merged,
+    origins,
     hours,
   };
 }

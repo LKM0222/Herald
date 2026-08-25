@@ -61,6 +61,8 @@ rmSync(BUILD, { recursive: true, force: true });
 const sources = [
   "server/lib/news/pending.ts",
   "server/lib/news/collect.ts",
+  "server/lib/news/origin.ts",
+  "server/lib/news/url.ts",
   "server/lib/news/seen.ts",
   "server/lib/settings.ts",
   "shared/sources.ts",
@@ -164,8 +166,14 @@ for (const r of result.reports) {
     String(r.ms).padStart(7) + (r.error ? "  " + r.error : ""),
   );
 }
+const o = result.origins;
 console.log(
-  `\n요약할 기사 ${result.items.length}건` +
+  `\n원본 주소 복원 ${o.resolved}건` +
+  ` (캐시 ${o.cached} · 자체글 ${o.selfPost} · 실패 ${o.failed} · ${o.ms}ms)` +
+  ` · 같은 기사라 합침 ${result.merged}건`,
+);
+console.log(
+  `요약할 기사 ${result.items.length}건` +
   ` · 이미 요약해서 뺌 ${result.skipped}건` +
   ` · 상한으로 버림 ${result.dropped}건 · ${ms}ms`,
 );
@@ -180,6 +188,11 @@ function markdown(result, now, ms) {
   lines.push(`- 요약할 기사: **${result.items.length}건**`);
   lines.push(`- 이미 요약해서 제외: ${result.skipped}건`);
   lines.push(`- 상한으로 버림: ${result.dropped}건`);
+  lines.push(`- 같은 기사라 합침: **${result.merged}건**`);
+  lines.push(
+    `- 원본 주소 복원: ${result.origins.resolved}건` +
+    ` (캐시 ${result.origins.cached} · 자체글 ${result.origins.selfPost} · 실패 ${result.origins.failed})`,
+  );
   lines.push(`- 수집 시간: ${ms}ms`);
   lines.push("");
   lines.push("| 소스 | 피드 전체 | 기간 내 | 날짜 없음 | 잘림 | ms | 비고 |");

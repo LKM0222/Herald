@@ -1,7 +1,8 @@
-import { createHash } from "node:crypto";
 import { XMLParser } from "fast-xml-parser";
 import { CATALOG, type SourceInfo } from "@shared/sources";
 import type { NewsItem } from "@shared/types";
+import { resolveOrigins, type OriginReport } from "./origin";
+import { idFor } from "./url";
 
 /**
  * RSS · Atom 수집.
@@ -32,6 +33,19 @@ const AGENT = "Herald/0.1 (+https://github.com/LKM0222/Herald)";
  * 1,827자 늘 뿐이라 굳이 문장을 자를 이유가 없다.
  */
 const EXCERPT_MAX = 1500;
+
+/**
+ * 발췌가 이보다 짧으면 없는 것으로 친다.
+ *
+ * ⚠ **빈 발췌보다 쓸모없는 발췌가 나쁘다.** Hacker News 피드는 description 에
+ *   댓글 링크만 넣어 보내서 걷어내면 `Comments` 여덟 글자가 남는다. 30건 전부
+ *   그렇다. 그대로 두면 판단 프롬프트에 `본문: Comments` 로 들어가고, 모델은
+ *   그걸 본문으로 취급한다 — 제목만 보고 정한다는 사실을 모르게 된다.
+ *
+ *   실측 하한은 GeekNews 53자, Simon Willison 584자다. 20자는 그 아래로
+ *   한참 여유가 있어 진짜 본문을 자르지 않는다.
+ */
+const EXCERPT_MIN = 20;
 
 /**
  * 하루치 전체 상한.
@@ -75,6 +89,10 @@ export type CollectResult = {
   reports: SourceReport[];
   /** 전체 상한에 걸려 잘린 건수 */
   dropped: number;
+  /** 같은 기사라 합친 건수. 0 이 아니면 원본 주소 복원이 일하고 있다는 뜻이다 */
+  merged: number;
+  /** 원본 주소 복원 결과 */
+  origins: OriginReport;
 };
 
 export type CollectOptions = {
@@ -98,7 +116,14 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
   );
 
   const reports = settled.map((one) => one.report);
-  const merged = dedupe(settled.flatMap((one) => one.items));
+
+  /* ⚠ 순서가 중요하다. 원본 주소를 먼저 되찾아야 중복 비교가 성립한다.
+     GeekNews 는 자기 주소만 주기 때문에, 이 줄이 없으면 Hacker News 와
+     같은 기사가 나란히 살아남는다 (origin.ts 참고). */
+  const raw = settled.flatMap((one) => one.items);
+  const { items: restored, report: origins } = await resolveOrigins(raw);
+
+  const merged = dedupe(restored);
   merged.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
 
   const items = merged.length <= TOTAL_MAX ? merged : ration(merged);
@@ -112,7 +137,13 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
     ).length;
   }
 
-  return { items, reports, dropped: merged.length - items.length };
+  return {
+    items,
+    reports,
+    dropped: merged.length - items.length,
+    merged: restored.length - merged.length,
+    origins,
+  };
 }
 
 type One = { items: NewsItem[]; report: SourceReport };
@@ -299,12 +330,14 @@ function toItem(
   // 제목이나 주소가 없으면 화면에서 할 수 있는 게 없다.
   if (!title || !url) return null;
 
-  const excerpt = clean(
+  const raw = clean(
     textOf(entry.description) ||
       textOf(entry.summary) ||
       textOf(entry.content) ||
       textOf(entry.encoded), // content:encoded
   ).slice(0, EXCERPT_MAX);
+  // 짧은 건 본문이 아니라 피드의 껍데기다 (EXCERPT_MIN 참고).
+  const excerpt = raw.length >= EXCERPT_MIN ? raw : "";
 
   return {
     id: idFor(url),
@@ -344,29 +377,6 @@ function decode(text: string): string {
   });
 }
 
-/** 주소가 같으면 같은 기사다. id 는 날마다 안 바뀌어야 한다 — 요약 재사용의 열쇠다. */
-function idFor(url: string): string {
-  return createHash("sha1").update(canonical(url)).digest("hex").slice(0, 16);
-}
-
-/** 추적 파라미터와 끝 슬래시를 떼어낸다. 같은 글이 두 주소로 들어오는 걸 막는다. */
-function canonical(url: string): string {
-  try {
-    const at = new URL(url);
-    at.hash = "";
-    for (const key of [...at.searchParams.keys()]) {
-      if (/^(utm_|ref$|ref_|source$|fbclid$|gclid$)/i.test(key)) {
-        at.searchParams.delete(key);
-      }
-    }
-    at.hostname = at.hostname.toLowerCase().replace(/^www\./, "");
-    at.pathname = at.pathname.replace(/\/+$/, "") || "/";
-    return at.toString();
-  } catch {
-    return url.trim();
-  }
-}
-
 /**
  * 같은 기사를 묶는다.
  *
@@ -379,11 +389,10 @@ function dedupe(items: NewsItem[]): NewsItem[] {
   for (const item of items) {
     const seen = byId.get(item.id);
     if (!seen) {
-      byId.set(item.id, item);
+      byId.set(item.id, { ...item });
       continue;
     }
-    // 같은 주소가 두 소스에서 왔다. 먼저 본 쪽을 남기고 나머지를 달아둔다.
-    seen.alsoIn = [...(seen.alsoIn ?? []), { source: item.source, url: item.url }];
+    byId.set(item.id, keepBetter(seen, item));
   }
 
   const byTitle = new Map<string, NewsItem>();
@@ -392,13 +401,39 @@ function dedupe(items: NewsItem[]): NewsItem[] {
     const key = titleKey(item.title);
     const seen = key ? byTitle.get(key) : undefined;
     if (seen) {
-      seen.alsoIn = [...(seen.alsoIn ?? []), { source: item.source, url: item.url }];
+      const winner = keepBetter(seen, item);
+      // 자리를 그대로 두고 내용만 바꿔치운다 — 정렬은 나중에 다시 한다.
+      Object.assign(seen, winner);
       continue;
     }
     if (key) byTitle.set(key, item);
     out.push(item);
   }
   return out;
+}
+
+/**
+ * 같은 기사가 두 소스에서 왔을 때 **어느 쪽을 남길지.**
+ *
+ * 먼저 본 쪽이 아니라 **발췌가 긴 쪽**을 남긴다. 판단 재료가 많은 쪽이기 때문이다.
+ * 실제로 이게 갈린다 — Apple 발표를 GeekNews 는 한국어 요약 155자로 주고
+ * Hacker News 는 발췌 없이 준다. 먼저 본 쪽을 남기면 소스 목록 순서라는
+ * 아무 상관 없는 이유로 재료가 사라진다.
+ *
+ * 진 쪽은 alsoIn 에 남아 화면에서 눌러 갈 수 있다.
+ */
+function keepBetter(a: NewsItem, b: NewsItem): NewsItem {
+  const [win, lose] = (b.excerpt?.length ?? 0) > (a.excerpt?.length ?? 0)
+    ? [b, a]
+    : [a, b];
+  return {
+    ...win,
+    alsoIn: [
+      ...(win.alsoIn ?? []),
+      { source: lose.source, url: lose.url },
+      ...(lose.alsoIn ?? []),
+    ],
+  };
 }
 
 function titleKey(title: string): string {

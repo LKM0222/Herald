@@ -1,5 +1,5 @@
 import { shiftISO, todayISO } from "@shared/date";
-import { fetchRange } from "@/lib/calendar/connection";
+import { fetchRange, probeAll } from "@/lib/calendar/connection";
 import { isAuthorized, json, preflight, unauthorized } from "@/lib/http";
 
 /**
@@ -20,7 +20,15 @@ export async function GET(request: Request) {
   if (!isAuthorized(request)) return unauthorized(origin);
 
   const today = todayISO();
-  const result = await fetchRange(shiftISO(today, -30), shiftISO(today, 30));
+  const from = shiftISO(today, -30);
+  const to = shiftISO(today, 30);
+
+  // ?debug=1 — 붙긴 했는데 아무것도 안 나올 때 원인을 가른다.
+  if (new URL(request.url).searchParams.get("debug") === "1") {
+    return json(await probeAll(from, to), { origin });
+  }
+
+  const result = await fetchRange(from, to);
 
   if (!result.ok) {
     // 연결 실패는 서버 고장이 아니다. 200 으로 주고 화면이 사유를 읽게 한다.

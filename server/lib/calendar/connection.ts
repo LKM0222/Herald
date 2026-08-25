@@ -3,9 +3,11 @@ import {
   CalDavError,
   discoverCalendars,
   fetchEventData,
+  probeCalendar,
   type CalendarRef,
   type Credentials,
   type FailureKind,
+  type Probe,
 } from "./caldav";
 
 /**
@@ -84,6 +86,30 @@ export async function fetchRange(
       raw.push(...(await fetchEventData(auth, calendar.url, from, to)));
     }
     return { ok: true, calendars, raw };
+  } catch (error) {
+    return toFailure(error);
+  }
+}
+
+/** 진단. "일정이 없는 것"과 "조회가 안 먹는 것"을 가른다. */
+export async function probeAll(
+  from: string,
+  to: string,
+): Promise<
+  | { ok: true; probes: Probe[] }
+  | { ok: false; kind: FailureKind | "not_configured"; message: string }
+> {
+  const auth = credentials();
+  if (!auth) {
+    return { ok: false, kind: "not_configured", message: "자격증명이 없어요" };
+  }
+  try {
+    const calendars = await discoverCalendars(auth);
+    const probes: Probe[] = [];
+    for (const calendar of calendars) {
+      probes.push(await probeCalendar(auth, calendar, from, to));
+    }
+    return { ok: true, probes };
   } catch (error) {
     return toFailure(error);
   }

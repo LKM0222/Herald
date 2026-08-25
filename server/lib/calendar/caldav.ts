@@ -330,3 +330,75 @@ export async function fetchEventData(
   }
   return out;
 }
+
+/**
+ * 진단용. "일정이 없는 것"과 "조회가 안 먹는 것"을 가른다.
+ *
+ * 둘은 화면에서 똑같이 빈 달력으로 보이는데 원인이 정반대다. 세 가지를 각각
+ * 세어 비교하면 어디가 막혔는지 한 번에 나온다:
+ *   - 컬렉션에 놓인 리소스 수 (필터 없이 그냥 목록)
+ *   - 기간 필터를 건 조회 결과 수
+ *   - 기간 필터를 뺀 조회 결과 수
+ * 리소스는 있는데 조회가 0 이면 필터가 범인이고, 리소스부터 0 이면 정말 빈 것이다.
+ *
+ * ⚠ 일정 **내용은 담지 않는다.** 진단 응답이 일정 덤프가 되면 안 된다.
+ */
+export type Probe = {
+  calendar: string;
+  resources: number;
+  withRange: number;
+  withoutRange: number;
+  error?: string;
+};
+
+export async function probeCalendar(
+  credentials: Credentials,
+  calendar: CalendarRef,
+  from: string,
+  to: string,
+): Promise<Probe> {
+  const result: Probe = {
+    calendar: calendar.name,
+    resources: -1,
+    withRange: -1,
+    withoutRange: -1,
+  };
+
+  try {
+    const listing = await dav(credentials, {
+      method: "PROPFIND",
+      url: calendar.url,
+      depth: "1",
+      body: `<?xml version="1.0" encoding="utf-8"?>
+<d:propfind xmlns:d="DAV:"><d:prop><d:getcontenttype/></d:prop></d:propfind>`,
+    });
+    // 컬렉션 자신도 한 줄로 끼어 있으므로 뺀다.
+    result.resources = Math.max(0, responsesOf(listing).length - 1);
+
+    result.withRange = (
+      await fetchEventData(credentials, calendar.url, from, to)
+    ).length;
+
+    const all = await dav(credentials, {
+      method: "REPORT",
+      url: calendar.url,
+      depth: "1",
+      body: `<?xml version="1.0" encoding="utf-8"?>
+<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:prop><c:calendar-data/></d:prop>
+  <c:filter>
+    <c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"/></c:comp-filter>
+  </c:filter>
+</c:calendar-query>`,
+    });
+    result.withoutRange = responsesOf(all).filter((response) => {
+      const data = propsOf(response)["calendar-data"];
+      return typeof data === "string" && data.includes("BEGIN:VEVENT");
+    }).length;
+  } catch (error) {
+    result.error =
+      error instanceof CalDavError ? `${error.kind}: ${error.message}` : String(error);
+  }
+
+  return result;
+}

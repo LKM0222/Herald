@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { formatRelative } from "@shared/date";
 import type { Briefing, NewsItem } from "@shared/types";
 import {
@@ -56,12 +56,146 @@ export function Home({
   );
 }
 
+/** 드래그로 볼 최소 이동량(px). 이보다 덜 움직였으면 클릭이다. */
+const DRAG_SLOP = 6;
+
+/**
+ * 스크롤 위치에 가장 가까운 카드.
+ *
+ * 카드 폭은 트랙 폭과 다르다(좌우 여백·간격). 나눗셈으로 넘겨짚지 않는다.
+ * ⚠ offsetLeft 는 "가장 가까운 위치 지정 조상" 기준이라, 이 비교가 성립하려면
+ *   트랙이 offsetParent 여야 한다 — 그래서 트랙에 relative 가 붙어 있다.
+ */
+function nearestIndex(track: HTMLElement): number {
+  const cards = [...track.children] as HTMLElement[];
+  let nearest = 0;
+  let best = Infinity;
+  cards.forEach((card, index) => {
+    const distance = Math.abs(card.offsetLeft - track.scrollLeft);
+    if (distance < best) {
+      best = distance;
+      nearest = index;
+    }
+  });
+  return nearest;
+}
+
+/** 카드 위치를 그대로 목적지로 쓴다 — 폭을 가정하면 snap 이 끄는 자리와 어긋난다. */
+function scrollToCard(track: HTMLElement, index: number) {
+  const card = track.children[index] as HTMLElement | undefined;
+  // scrollIntoView 를 쓰지 않는 이유: 세로 스크롤까지 건드린다.
+  if (card) track.scrollTo({ left: card.offsetLeft, behavior: "smooth" });
+}
+
+/**
+ * 마우스로 붙잡고 끌어서 넘기기.
+ *
+ * `overflow-x: auto` 는 터치·휠·트랙패드로만 움직인다. 마우스로 끄는 동작은
+ * 어느 브라우저에도 없어서 직접 만들어야 한다.
+ *
+ * 터치는 일부러 건드리지 않는다 — 가로채는 순간 관성 스크롤을 잃는다.
+ * 그래서 pointerType 이 mouse 일 때만 개입한다.
+ */
+function useDragScroll(ref: RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const track = ref.current;
+    if (!track) return;
+
+    let dragging = false;
+    let startX = 0;
+    let startScroll = 0;
+    let moved = 0;
+
+    /** 끌고 놓은 손끝이 버튼 위였다고 그 버튼이 눌리면 안 된다. */
+    const swallowClick = (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.pointerType !== "mouse" || event.button !== 0) return;
+      dragging = true;
+      moved = 0;
+      startX = event.clientX;
+      startScroll = track.scrollLeft;
+      // snap 을 켜 둔 채 scrollLeft 를 만지면 브라우저가 매 프레임 스냅 지점으로
+      // 되끌어당겨 드래그가 통째로 씹힌다.
+      track.style.scrollSnapType = "none";
+      track.style.cursor = "grabbing";
+      // 텍스트가 잡히거나 링크가 통째로 끌려가는(네이티브 drag) 걸 막는다.
+      event.preventDefault();
+    };
+
+    // 창 전체에서 듣는다. 트랙 밖으로 손이 나가도 드래그가 이어져야 하고,
+    // setPointerCapture 를 쓰면 뒤따르는 click 까지 트랙으로 재조준돼
+    // 카드 안 링크가 눌리지 않는다.
+    const onPointerMove = (event: PointerEvent) => {
+      if (!dragging) return;
+      const delta = event.clientX - startX;
+      moved = Math.max(moved, Math.abs(delta));
+      track.scrollLeft = startScroll - delta;
+    };
+
+    const onPointerUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      track.style.cursor = "";
+
+      if (moved > DRAG_SLOP) {
+        track.addEventListener("click", swallowClick, { capture: true });
+        // click 은 pointerup 직후 같은 입력 처리에서 오고 타이머는 그 뒤다.
+        // 즉 "이번 클릭만" 먹고 빠진다.
+        window.setTimeout(
+          () => track.removeEventListener("click", swallowClick, true),
+          0,
+        );
+      }
+
+      // 손을 뗀 자리는 카드 경계가 아니다. 가까운 카드로 정렬한 뒤 snap 을 되돌린다.
+      scrollToCard(track, nearestIndex(track));
+      restoreSnap(track);
+    };
+
+    track.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
+    return () => {
+      track.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+      track.removeEventListener("click", swallowClick, true);
+      track.style.scrollSnapType = "";
+      track.style.cursor = "";
+    };
+  }, [ref]);
+}
+
+/**
+ * 정렬 스크롤이 끝나면 snap 을 되돌린다.
+ *
+ * 스크롤이 도는 도중에 되돌리면 mandatory 스냅이 즉시 잡아채 부드러운 이동이
+ * 툭 끊긴다. scrollend 가 없는 브라우저와 "이미 제자리라 스크롤이 아예 일어나지
+ * 않는" 경우가 있어 타이머를 보험으로 함께 건다.
+ */
+function restoreSnap(track: HTMLElement) {
+  const done = () => {
+    track.style.scrollSnapType = "";
+  };
+  if ("onscrollend" in track) {
+    track.addEventListener("scrollend", done, { once: true });
+  }
+  window.setTimeout(done, 500);
+}
+
 /**
  * 좌우로 넘기는 리드 카드.
  *
  * 자바스크립트 캐러셀을 만들지 않고 `scroll-snap` 에 맡긴다 —
  * 터치 관성·접근성·키보드 조작이 브라우저 기본 동작으로 따라온다.
- * 점 표시만 스크롤 위치를 읽어 갱신한다.
+ * 마우스 드래그만 브라우저가 안 해주는 부분이라 useDragScroll 로 보탠다.
+ * 점 표시는 스크롤 위치를 읽어 갱신한다.
  */
 function LeadCarousel({
   leads,
@@ -78,35 +212,17 @@ function LeadCarousel({
   useEffect(() => {
     const track = trackRef.current;
     if (!track) return;
-    const onScroll = () => {
-      // 카드 폭은 트랙 폭과 다르다(좌우 여백·간격). 나눗셈으로 넘겨짚지 않고
-      // 스크롤 위치에 가장 가까운 카드를 찾는다.
-      // ⚠ 이 비교가 성립하려면 트랙이 offsetParent 여야 한다 — 그래서 relative.
-      const cards = [...track.children] as HTMLElement[];
-      let nearest = 0;
-      let best = Infinity;
-      cards.forEach((card, index) => {
-        const distance = Math.abs(card.offsetLeft - track.scrollLeft);
-        if (distance < best) {
-          best = distance;
-          nearest = index;
-        }
-      });
-      setActive(nearest);
-    };
+    const onScroll = () => setActive(nearestIndex(track));
     track.addEventListener("scroll", onScroll, { passive: true });
     onScroll();
     return () => track.removeEventListener("scroll", onScroll);
   }, [leads.length]);
 
+  useDragScroll(trackRef);
+
   function goTo(index: number) {
     const track = trackRef.current;
-    const card = track?.children[index] as HTMLElement | undefined;
-    if (!track || !card) return;
-    // 카드 위치를 그대로 목적지로 쓴다 — 폭을 가정하면 snap 이 끌어당기는
-    // 자리와 어긋나 제자리로 튕긴다.
-    // scrollIntoView 를 쓰지 않는 이유: 세로 스크롤까지 건드린다.
-    track.scrollTo({ left: card.offsetLeft, behavior: "smooth" });
+    if (track) scrollToCard(track, index);
   }
 
   if (leads.length === 0) {
@@ -121,7 +237,10 @@ function LeadCarousel({
     <div className="flex flex-col gap-3.5">
       <div
         ref={trackRef}
-        className="relative -mx-1 flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className={`relative -mx-1 flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+          // 넘길 게 없으면 잡히는 척하지 않는다
+          leads.length > 1 ? "cursor-grab" : ""
+        }`}
       >
         {leads.map((item, index) => (
           <LeadCard

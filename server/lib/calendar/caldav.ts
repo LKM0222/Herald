@@ -416,7 +416,8 @@ export type Probe = {
   calendar: string;
   resources: number;
   withRange: number;
-  withoutRange: number;
+  /** 아주 넓은 창(2024~2027)으로 조회했을 때. 좁은 창의 0 이 진짜인지 가른다. */
+  wideRange: number;
   /** REPORT 가 돌려준 응답 줄 수. 이게 0 이면 서버가 아예 안 준 것이고,
    *  0 이 아닌데 위 숫자가 0 이면 우리가 못 꺼낸 것이다. */
   reportRows: number;
@@ -449,7 +450,7 @@ export async function probeCalendar(
     calendar: calendar.name,
     resources: -1,
     withRange: -1,
-    withoutRange: -1,
+    wideRange: -1,
     reportRows: -1,
   };
 
@@ -484,17 +485,10 @@ export async function probeCalendar(
     result.reportRows = rows.length;
     if (rows[0]) result.shape = describeShape(rows[0]);
 
-    const hrefs = rows
-      .map((row) => hrefOf(row.href))
-      .filter((href): href is string => Boolean(href))
-      .filter((href) => !href.endsWith("/"));
-    result.withoutRange = (
-      await multiget(credentials, calendar.url, hrefs.slice(0, MULTIGET_BATCH))
+    // 좁은 창에서 0 건일 때, 정말 그 기간에 없는 건지 필터가 이상한 건지 가른다.
+    result.wideRange = (
+      await fetchEventData(credentials, calendar.url, "2024-01-01", "2027-12-31")
     ).length;
-    result.withoutRange = rows.filter((response) => {
-      const data = textOf(propsOf(response)["calendar-data"]);
-      return Boolean(data && data.includes("BEGIN:VEVENT"));
-    }).length;
   } catch (error) {
     result.error =
       error instanceof CalDavError ? `${error.kind}: ${error.message}` : String(error);

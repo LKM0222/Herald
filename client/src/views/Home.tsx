@@ -105,17 +105,57 @@ function useDragScroll(ref: RefObject<HTMLDivElement | null>) {
     let startX = 0;
     let startScroll = 0;
     let moved = 0;
+    let suppressClick = false;
+    let restoreTimer = 0;
+
+    /**
+     * ⚠ 복구 예약은 한 번에 하나만 살아 있어야 한다.
+     *
+     * 남겨두면 다음 드래그 도중에 터진다. 그 순간 snap 이 되살아나
+     * scrollLeft 를 쓸 때마다 스냅 지점으로 되끌려 드래그가 죽는다.
+     * 그리고 죽은 채로는 정렬 스크롤도 안 나니 scrollend 가 또 안 와서
+     * 예약이 다시 남는다 — 한 번 빠지면 못 나오는 고리다.
+     */
+    const cancelRestore = () => {
+      window.clearTimeout(restoreTimer);
+      restoreTimer = 0;
+      track.removeEventListener("scrollend", finishRestore);
+    };
+
+    // 화살표 함수여야 위의 `if (!track) return` 이 좁혀둔 타입이 살아남는다.
+    const finishRestore = () => {
+      cancelRestore();
+      track.style.scrollSnapType = "";
+    };
+
+    /**
+     * 정렬 스크롤이 끝나면 snap 을 되돌린다.
+     *
+     * 도는 도중에 되돌리면 mandatory 스냅이 즉시 잡아채 이동이 툭 끊긴다.
+     * 이미 제자리라 스크롤이 아예 안 일어나는 경우(마지막 카드 너머로 민 뒤가
+     * 그렇다)엔 scrollend 가 오지 않으므로 타이머를 함께 건다.
+     */
+    const scheduleRestore = () => {
+      cancelRestore();
+      track.addEventListener("scrollend", finishRestore);
+      restoreTimer = window.setTimeout(finishRestore, 500);
+    };
 
     /** 끌고 놓은 손끝이 버튼 위였다고 그 버튼이 눌리면 안 된다. */
     const swallowClick = (event: MouseEvent) => {
+      // detail 0 은 키보드로 누른 click 이다 — 드래그의 잔상이 아니니 통과시킨다.
+      if (!suppressClick || event.detail === 0) return;
+      suppressClick = false;
       event.preventDefault();
       event.stopPropagation();
     };
 
     const onPointerDown = (event: PointerEvent) => {
       if (event.pointerType !== "mouse" || event.button !== 0) return;
+      cancelRestore();
       dragging = true;
       moved = 0;
+      suppressClick = false;
       startX = event.clientX;
       startScroll = track.scrollLeft;
       // snap 을 켜 둔 채 scrollLeft 를 만지면 브라우저가 매 프레임 스냅 지점으로
@@ -131,6 +171,12 @@ function useDragScroll(ref: RefObject<HTMLDivElement | null>) {
     // 카드 안 링크가 눌리지 않는다.
     const onPointerMove = (event: PointerEvent) => {
       if (!dragging) return;
+      // 창 밖에서 손을 떼면 pointerup 이 오지 않는다. 그대로 두면 버튼을 뗀
+      // 뒤에도 카드가 마우스를 따라다닌다.
+      if (event.buttons === 0) {
+        onPointerUp();
+        return;
+      }
       const delta = event.clientX - startX;
       moved = Math.max(moved, Math.abs(delta));
       track.scrollLeft = startScroll - delta;
@@ -141,21 +187,16 @@ function useDragScroll(ref: RefObject<HTMLDivElement | null>) {
       dragging = false;
       track.style.cursor = "";
 
-      if (moved > DRAG_SLOP) {
-        track.addEventListener("click", swallowClick, { capture: true });
-        // click 은 pointerup 직후 같은 입력 처리에서 오고 타이머는 그 뒤다.
-        // 즉 "이번 클릭만" 먹고 빠진다.
-        window.setTimeout(
-          () => track.removeEventListener("click", swallowClick, true),
-          0,
-        );
-      }
+      // 리스너를 달았다 떼는 대신 깃발만 세운다 — 뗄 시점을 타이머로 재면
+      // 그 타이머가 또 남는다.
+      suppressClick = moved > DRAG_SLOP;
 
       // 손을 뗀 자리는 카드 경계가 아니다. 가까운 카드로 정렬한 뒤 snap 을 되돌린다.
       scrollToCard(track, nearestIndex(track));
-      restoreSnap(track);
+      scheduleRestore();
     };
 
+    track.addEventListener("click", swallowClick, { capture: true });
     track.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
@@ -166,27 +207,11 @@ function useDragScroll(ref: RefObject<HTMLDivElement | null>) {
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerUp);
       track.removeEventListener("click", swallowClick, true);
+      cancelRestore();
       track.style.scrollSnapType = "";
       track.style.cursor = "";
     };
   }, [ref]);
-}
-
-/**
- * 정렬 스크롤이 끝나면 snap 을 되돌린다.
- *
- * 스크롤이 도는 도중에 되돌리면 mandatory 스냅이 즉시 잡아채 부드러운 이동이
- * 툭 끊긴다. scrollend 가 없는 브라우저와 "이미 제자리라 스크롤이 아예 일어나지
- * 않는" 경우가 있어 타이머를 보험으로 함께 건다.
- */
-function restoreSnap(track: HTMLElement) {
-  const done = () => {
-    track.style.scrollSnapType = "";
-  };
-  if ("onscrollend" in track) {
-    track.addEventListener("scrollend", done, { once: true });
-  }
-  window.setTimeout(done, 500);
 }
 
 /**

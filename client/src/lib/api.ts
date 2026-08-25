@@ -1,4 +1,9 @@
-import type { Briefing, SecretStatus } from "@shared/types";
+import type {
+  Briefing,
+  CalendarEvent,
+  CalendarSubscription,
+  SecretStatus,
+} from "@shared/types";
 import type { Config } from "./config";
 
 /**
@@ -53,12 +58,19 @@ async function request(
  */
 async function describeError(response: Response): Promise<string> {
   let code = "";
+  let message = "";
   try {
-    const body = (await response.json()) as { error?: string };
+    const body = (await response.json()) as {
+      error?: string;
+      message?: string;
+    };
     code = body.error ?? "";
+    // 서버가 사람 말로 사유를 붙여 보냈으면 그게 코드보다 쓸모 있다.
+    if (typeof body.message === "string") message = body.message;
   } catch {
     // 본문이 JSON 이 아니면 상태 코드만으로 말한다.
   }
+  if (message) return message;
   if (code === "storage_unwritable") {
     return "서버가 저장에 실패했습니다. 데이터 폴더 권한을 확인해 주세요.";
   }
@@ -222,4 +234,122 @@ export async function saveSecret(
   }
   const body = (await response.json()) as { secrets: SecretStatus[] };
   return { kind: "ok", secrets: body.secrets };
+}
+
+// ── 캘린더 ───────────────────────────────────────────────
+// publishedKey 는 내려오지 않는다. 그 키를 아는 사람은 일정을 다 읽는다.
+
+export type SubscriptionsResult = Result<{
+  subscriptions: CalendarSubscription[];
+  canStore: boolean;
+}>;
+
+export async function fetchSubscriptions(
+  config: Config,
+): Promise<SubscriptionsResult> {
+  const response = await request(config, "/api/calendar/subscriptions");
+  if (isFailure(response)) return response;
+  const body = (await response.json()) as {
+    subscriptions: CalendarSubscription[];
+    canStore: boolean;
+  };
+  return {
+    kind: "ok",
+    subscriptions: body.subscriptions,
+    canStore: body.canStore,
+  };
+}
+
+export type AddSubscriptionResult =
+  | { kind: "ok"; subscriptions: CalendarSubscription[] }
+  | { kind: "rejected"; message: string }
+  | Failure;
+
+/**
+ * 주소를 등록한다. 서버가 네이버에 한 번 물어보고 통과한 것만 저장한다 —
+ * 그래서 여기서 돌아오는 실패는 대부분 사용자가 고칠 수 있는 것이다.
+ */
+export async function addSubscription(
+  config: Config,
+  url: string,
+): Promise<AddSubscriptionResult> {
+  const response = await request(config, "/api/calendar/subscriptions", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
+  if (isFailure(response)) {
+    // 400 은 request 가 unreachable 로 싸버린다. 서버가 붙여 보낸 사유를 되살린다.
+    if (response.kind === "unreachable") {
+      return { kind: "rejected", message: response.message };
+    }
+    return response;
+  }
+  const body = (await response.json()) as {
+    subscriptions: CalendarSubscription[];
+  };
+  return { kind: "ok", subscriptions: body.subscriptions };
+}
+
+export async function removeSubscription(
+  config: Config,
+  id: string,
+): Promise<SubscriptionsResult> {
+  const response = await request(
+    config,
+    `/api/calendar/subscriptions?id=${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
+  if (isFailure(response)) return response;
+  const body = (await response.json()) as {
+    subscriptions: CalendarSubscription[];
+  };
+  return { kind: "ok", subscriptions: body.subscriptions, canStore: true };
+}
+
+/** 캘린더 하나가 실패해도 나머지는 온다. 그래서 events 와 failed 가 같이 온다. */
+export type CalendarFailure = {
+  label: string;
+  kind: string;
+  message: string;
+};
+
+export type CalendarEventsResult = Result<{
+  /** 등록된 캘린더가 하나라도 있는지. 없으면 빈 화면의 이유가 다르다 */
+  configured: boolean;
+  /** 붙어 있는 캘린더 이름들. 그 기간에 일정이 없는 것도 들어 있다 */
+  calendars: string[];
+  events: CalendarEvent[];
+  failed: CalendarFailure[];
+}>;
+
+export async function fetchCalendarEvents(
+  config: Config,
+  from: string,
+  to: string,
+): Promise<CalendarEventsResult> {
+  const response = await request(
+    config,
+    `/api/calendar/events?from=${from}&to=${to}`,
+  );
+  if (isFailure(response)) return response;
+  const body = (await response.json()) as {
+    configured: boolean;
+    calendars: string[];
+    events: CalendarEvent[];
+    failed: CalendarFailure[];
+  };
+  return {
+    kind: "ok",
+    configured: body.configured,
+    calendars: body.calendars,
+    events: body.events,
+    failed: body.failed,
+  };
+}
+
+/** Failure 를 사람 말로. 화면 여러 곳에서 같은 문장을 써야 한다. */
+export function describeFailure(failure: Failure): string {
+  return failure.kind === "unauthorized"
+    ? "인증이 만료됐습니다. 연결을 다시 설정해 주세요."
+    : `서버에 닿지 않습니다 (${failure.message})`;
 }

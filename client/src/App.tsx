@@ -89,6 +89,7 @@ export default function App() {
           result={result}
           date={date}
           today={today}
+          config={config}
           onReconnect={reconnect}
         />
       )}
@@ -102,12 +103,15 @@ function BriefingView({
   result,
   date,
   today,
+  config,
   onReconnect,
 }: {
   view: ViewId;
   result: BriefingResult | null;
   date: string;
   today: string;
+  /** 일정 화면은 브리핑과 별개로 캘린더를 직접 받아온다 */
+  config: Config;
   onReconnect: () => void;
 }) {
   if (result === null) {
@@ -161,7 +165,7 @@ function BriefingView({
     return <News briefing={briefing} date={date} today={today} />;
   }
   if (view === "schedule") {
-    return <ScheduleView briefing={briefing} today={today} />;
+    return <ScheduleView briefing={briefing} today={today} config={config} />;
   }
   return <Home briefing={briefing} date={date === today ? undefined : date} />;
 }

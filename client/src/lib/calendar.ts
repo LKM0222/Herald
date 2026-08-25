@@ -124,6 +124,24 @@ export function eventsByDate(briefing: Briefing): Map<string, DayEvent[]> {
   return byDate;
 }
 
+/**
+ * 캘린더에서 받아온 일정을 날짜별로 묶는다.
+ *
+ * eventsByDate 와 나누는 이유: 저쪽은 브리핑(오늘 + 다음 7일)이 입력이고
+ * 이쪽은 기간을 지정해 받아온 목록이 입력이다. 둘을 한 함수로 합치면
+ * "어디까지 아는가" 가 흐려진다 — 화면이 빈 칸의 의미를 그걸로 정한다.
+ */
+export function groupByDate(events: DayEvent[]): Map<string, DayEvent[]> {
+  const byDate = new Map<string, DayEvent[]>();
+  for (const event of events) {
+    const list = byDate.get(event.date);
+    if (list) list.push(event);
+    else byDate.set(event.date, [event]);
+  }
+  for (const list of byDate.values()) list.sort(byStartTime);
+  return byDate;
+}
+
 /** 종일 일정이 먼저, 그다음 시작 시각 순. */
 function byStartTime(a: DayEvent, b: DayEvent): number {
   const allDay = Number(b.allDay ?? false) - Number(a.allDay ?? false);

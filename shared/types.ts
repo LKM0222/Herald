@@ -56,6 +56,32 @@ export type WeekDay = {
   count: number;
 };
 
+/**
+ * 캘린더에서 읽어온 일정 한 건.
+ *
+ * 브리핑이 들고 있는 schedule/upcoming 과 달리 기간 제한이 없다 —
+ * 일정 탭이 달을 넘길 때마다 그 범위를 따로 받아온다.
+ */
+export type CalendarEvent = UpcomingItem & {
+  /** 장소. 비어 있으면 필드가 없다 */
+  place?: string;
+  /** 어느 캘린더에서 왔나. 여러 개를 붙이면 섞이기 때문에 남긴다 */
+  calendar?: string;
+};
+
+/**
+ * 등록해 둔 캘린더 주소 하나.
+ * ⚠ publishedKey 는 담기지 않는다 — 그 키를 아는 사람은 일정을 다 읽는다.
+ */
+export type CalendarSubscription = {
+  id: string;
+  /** 네이버가 붙인 캘린더 이름 */
+  label: string;
+  /** 소유 계정 아이디. 어느 계정 것인지 구분용 */
+  owner: string;
+  addedAt: string;
+};
+
 export type ContinueItem = {
   project: string;
   /** 어제 어디까지 갔나 */

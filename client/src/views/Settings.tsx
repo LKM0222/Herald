@@ -4,21 +4,26 @@ import {
   CalendarDays,
   CalendarX,
   KeyRound,
+  Link2,
   Palette,
   Plug,
   Rss,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import {
+  addSubscription,
+  describeFailure as describe,
   fetchSecrets,
   fetchSettings,
+  fetchSubscriptions,
+  removeSubscription,
   saveSecret,
   saveSettings,
   setPassword,
-  type Failure,
   type SaveSecretResult,
 } from "../lib/api";
-import type { SecretStatus } from "@shared/types";
+import type { CalendarSubscription, SecretStatus } from "@shared/types";
 import { saveConfig, type Config } from "../lib/config";
 import {
   applyPalette,
@@ -426,17 +431,23 @@ function SummarySection({ config }: { config: Config }) {
 }
 
 /**
- * 캘린더 연결.
+ * 캘린더 연결 — 공개 주소로 붙는다.
  *
- * ⚠ 네이버는 CalDAV 뿐이라 OAuth 토큰이 아니라 **비밀번호**를 들고 있어야 한다.
- *   그래서 반드시 애플리케이션 비밀번호를 받는다 — 계정 비밀번호를 받는
- *   입력 경로를 만들지 않는다 (CLAUDE.md 절대 규칙 3).
- *   저장은 요약 API 키와 같은 암호화 경로를 탄다.
+ * 네이버 캘린더는 "공유" 를 켜면 주소 하나가 나오고, 그 주소로 일정을
+ * 로그인 없이 읽을 수 있다. 그래서 여기서 받는 건 아이디도 비밀번호도 아닌
+ * **주소**다.
+ *
+ * ⚠ 뒤집으면 그 주소를 아는 사람은 누구나 같은 일정을 읽는다는 뜻이다.
+ *   자격증명과 다를 게 없어서 저장은 암호화 경로를 타고(subscriptions.ts),
+ *   화면으로 되돌려주지 않는다. 노출 범위는 화면에도 적어둔다 —
+ *   적지 않으면 "비공개로 연동된 것" 으로 잘못 읽힌다.
  */
 function CalendarSection({ config }: { config: Config }) {
-  const [statuses, setStatuses] = useState<SecretStatus[] | null>(null);
-  const [id, setId] = useState("");
-  const [password, setPassword] = useState("");
+  const [subscriptions, setSubscriptions] = useState<
+    CalendarSubscription[] | null
+  >(null);
+  const [legacy, setLegacy] = useState<SecretStatus[] | null>(null);
+  const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<
     { tone: "ok" | "error"; text: string } | null
@@ -444,143 +455,187 @@ function CalendarSection({ config }: { config: Config }) {
 
   useEffect(() => {
     let cancelled = false;
-    void fetchSecrets(config).then((result) => {
+    void fetchSubscriptions(config).then((result) => {
       if (cancelled) return;
-      if (result.kind === "ok") setStatuses(result.secrets);
+      if (result.kind === "ok") setSubscriptions(result.subscriptions);
       else setMessage({ tone: "error", text: describe(result) });
+    });
+    // 예전에 CalDAV 로 넣어둔 계정이 남아 있으면 정리할 수 있게 보여준다.
+    void fetchSecrets(config).then((result) => {
+      if (!cancelled && result.kind === "ok") setLegacy(result.secrets);
     });
     return () => {
       cancelled = true;
     };
   }, [config]);
 
-  const naverId = statuses?.find((item) => item.name === "naver_id");
-  const naverPassword = statuses?.find((item) => item.name === "naver_password");
-  const connected = Boolean(naverId?.set && naverPassword?.set);
-  const ready = id.trim() !== "" && password.trim() !== "" && !busy;
+  const naverId = legacy?.find((item) => item.name === "naver_id");
+  const naverPassword = legacy?.find((item) => item.name === "naver_password");
+  const hasLegacy = Boolean(naverId?.set || naverPassword?.set);
+  const connected = (subscriptions?.length ?? 0) > 0;
+  const ready = url.trim() !== "" && !busy;
 
-  async function connect() {
+  async function addUrl() {
     setBusy(true);
-    const first = await saveSecret(config, "naver_id", id);
-    if (first.kind !== "ok") {
-      setBusy(false);
-      setMessage({ tone: "error", text: explain(first) });
-      return;
-    }
-    const second = await saveSecret(config, "naver_password", password);
+    setMessage(null);
+    const result = await addSubscription(config, url);
     setBusy(false);
-    if (second.kind !== "ok") {
-      setMessage({ tone: "error", text: explain(second) });
+
+    if (result.kind === "ok") {
+      setSubscriptions(result.subscriptions);
+      setUrl("");
+      setMessage({ tone: "ok", text: "캘린더를 붙였어요. 일정 탭에서 바로 보입니다." });
       return;
     }
-    setStatuses(second.secrets);
-    setId("");
-    setPassword("");
-    setMessage({
-      tone: "ok",
-      text: "저장했어요. 실제로 일정을 가져오는 건 다음 단계에서 붙습니다.",
-    });
+    if (result.kind === "rejected") {
+      setMessage({ tone: "error", text: rejectionText(result.message) });
+      return;
+    }
+    setMessage({ tone: "error", text: describe(result) });
   }
 
-  async function disconnect() {
+  async function drop(id: string) {
+    setBusy(true);
+    const result = await removeSubscription(config, id);
+    setBusy(false);
+    if (result.kind === "ok") {
+      setSubscriptions(result.subscriptions);
+      setMessage({ tone: "ok", text: "캘린더를 뺐어요." });
+    } else {
+      setMessage({ tone: "error", text: describe(result) });
+    }
+  }
+
+  /** 예전 CalDAV 자격증명 지우기. 안 쓰는 비밀번호를 남겨둘 이유가 없다. */
+  async function clearLegacy() {
     setBusy(true);
     await saveSecret(config, "naver_id", "");
     const result = await saveSecret(config, "naver_password", "");
     setBusy(false);
-    if (result.kind === "ok") {
-      setStatuses(result.secrets);
-      setMessage({ tone: "ok", text: "연결을 끊었어요." });
+    if (result.kind !== "ok") {
+      // 조용히 넘어가면 안 지워졌는데 지워진 줄 안다.
+      setMessage({ tone: "error", text: explain(result) });
+      return;
     }
+    setLegacy(result.secrets);
+    setMessage({ tone: "ok", text: "저장돼 있던 앱 비밀번호를 지웠어요." });
   }
 
   return (
     <Section
       id="calendar"
       title="캘린더"
-      note="일정 탭과 아침 브리핑에 띄울 캘린더를 연결해요. 계정 정보는 서버에만 암호화되어 저장되고 브라우저엔 남지 않습니다."
+      note="일정 탭과 아침 브리핑에 띄울 캘린더를 주소로 붙여요. 주소는 서버에만 암호화되어 저장되고 브라우저엔 남지 않습니다."
       aside={connected ? <Tag tone="accent">연결됨</Tag> : <Tag>연결 전</Tag>}
     >
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
-          <Kicker>연결된 계정</Kicker>
-          {connected ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3">
-              <span className="flex flex-col gap-0.5">
-                <span className="font-display text-sm">
-                  네이버 캘린더 · {naverId?.tail}
-                </span>
-                <span className="text-xs text-dim">
-                  앱 비밀번호 ••••{naverPassword?.tail}
-                </span>
-              </span>
-              <Button onClick={() => void disconnect()} disabled={busy}>
-                연결 끊기
-              </Button>
+          <Kicker>연결된 캘린더</Kicker>
+
+          {subscriptions === null ? (
+            <div className="rounded-xl border border-line px-4 py-4 text-sm text-dim">
+              불러오는 중이에요…
             </div>
+          ) : connected ? (
+            <ul className="flex flex-col gap-2">
+              {subscriptions.map((item) => (
+                <li
+                  key={item.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3"
+                >
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="font-display text-sm break-keep">
+                      {item.label}
+                    </span>
+                    <span className="text-xs text-dim">
+                      네이버 캘린더{item.owner ? ` · ${item.owner}` : ""}
+                    </span>
+                  </span>
+                  <Button
+                    onClick={() => void drop(item.id)}
+                    disabled={busy}
+                    title={`${item.label} 빼기`}
+                  >
+                    <Trash2 size={16} strokeWidth={1.5} />
+                    빼기
+                  </Button>
+                </li>
+              ))}
+            </ul>
           ) : (
             <div className="flex flex-col items-start gap-1.5 rounded-xl border border-line px-4 py-4">
               <CalendarX size={18} strokeWidth={1.5} className="text-dim" />
               <span className="text-sm">아직 연결한 캘린더가 없어요</span>
-              <span className="text-xs text-dim">
-                아래에서 하나 골라 연결하면 일정 탭이 채워집니다.
+              <span className="text-xs text-dim break-keep">
+                아래에 공유 주소를 넣으면 일정 탭이 채워집니다.
               </span>
             </div>
           )}
+
+          {hasLegacy ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3">
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-sm font-medium">
+                  예전 방식으로 저장된 계정 {naverId?.tail ? `· ${naverId.tail}` : ""}
+                </span>
+                <span className="text-xs text-dim break-keep">
+                  이제 주소로 붙이기 때문에 앱 비밀번호는 쓰지 않아요. 지워도 됩니다.
+                </span>
+              </span>
+              <Button onClick={() => void clearLegacy()} disabled={busy}>
+                지우기
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-3">
-          <Kicker>계정 추가</Kicker>
+          <Kicker>캘린더 주소 추가</Kicker>
 
           <form
             className="flex flex-col gap-3 rounded-xl border border-line p-4"
             onSubmit={(event) => {
               event.preventDefault();
-              if (ready) void connect();
+              if (ready) void addUrl();
             }}
           >
             <div className="flex flex-col gap-0.5">
               <span className="font-display text-base">네이버 캘린더</span>
-              <span className="text-xs leading-relaxed text-dim">
-                CalDAV 로 붙어요. <b>로그인 비밀번호가 아니라 앱 비밀번호</b>를
-                넣어야 합니다.
+              <span className="text-xs leading-relaxed text-dim break-keep">
+                네이버 캘린더에서 <b>캘린더 공유 · 공개 설정</b>을 켜면 나오는
+                주소를 넣어주세요. 비밀번호는 필요 없어요.
               </span>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="아이디">
-                <input
-                  value={id}
-                  onChange={(event) => setId(event.target.value)}
-                  placeholder="naver_id"
-                  autoComplete="off"
-                  spellCheck={false}
-                  className={inputClass}
-                />
-              </Field>
-              <Field label="앱 비밀번호">
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  autoComplete="off"
-                  className={inputClass}
-                />
-              </Field>
-            </div>
+            <Field label="공유 주소">
+              <input
+                value={url}
+                onChange={(event) => setUrl(event.target.value)}
+                placeholder="https://naver.me/xxxxxxxx"
+                autoComplete="off"
+                spellCheck={false}
+                inputMode="url"
+                className={inputClass}
+              />
+            </Field>
 
-            {message ? (
-              <Notice tone={message.tone}>{message.text}</Notice>
-            ) : null}
+            {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
 
             <div className="flex flex-wrap items-center gap-2">
               <Button type="submit" variant="primary" disabled={!ready}>
-                <Plug size={16} strokeWidth={1.5} />
-                {busy ? "저장 중…" : "연결하기"}
+                <Link2 size={16} strokeWidth={1.5} />
+                {busy ? "확인 중…" : "추가하기"}
               </Button>
-              <span className="text-xs text-dim">
-                앱 비밀번호는 네이버 보안 설정에서 발급받을 수 있어요
+              <span className="text-xs text-dim break-keep">
+                주소가 살아 있는지 넣을 때 한 번 확인해요
               </span>
             </div>
+
+            <p className="text-xs leading-relaxed text-dim break-keep">
+              ⚠ 공개 주소라서 <b>이 주소를 아는 사람은 누구나</b> 해당 캘린더의
+              일정을 볼 수 있어요. 남에게 보이면 안 되는 일정은 다른 캘린더에
+              두거나, 공유를 꺼주세요.
+            </p>
           </form>
 
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3.5">
@@ -606,6 +661,20 @@ function CalendarSection({ config }: { config: Config }) {
       </div>
     </Section>
   );
+}
+
+/**
+ * 서버가 붙여 보낸 실패 코드를 사람 말로.
+ * request() 가 400 을 문자열로 싸버려서 코드가 메시지 안에 섞여 온다.
+ */
+function rejectionText(raw: string): string {
+  if (raw.includes("duplicate")) return "이미 넣어둔 캘린더예요.";
+  if (raw.includes("no_encryption_key")) {
+    return "서버에 ENCRYPTION_KEY 가 없어 암호화 저장을 할 수 없습니다.";
+  }
+  if (raw.includes("invalid_body")) return "주소를 넣어주세요.";
+  // bad_url · not_found · network · protocol 은 서버가 사람 말 메시지를 같이 보낸다.
+  return raw;
 }
 
 /** saveSecret 의 실패 종류를 사람 말로. */
@@ -755,8 +824,3 @@ function Notice({
   );
 }
 
-function describe(failure: Failure): string {
-  return failure.kind === "unauthorized"
-    ? "인증이 만료됐습니다. 연결을 다시 설정해 주세요."
-    : `서버에 닿지 않습니다 (${failure.message})`;
-}

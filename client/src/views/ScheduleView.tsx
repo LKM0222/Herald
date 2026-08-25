@@ -1,11 +1,25 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { formatKoreanDate, shiftISO } from "@shared/date";
-import type { Briefing } from "@shared/types";
-import { CalendarX, ChevronLeft, ChevronRight } from "lucide-react";
+import type { Briefing, CalendarEvent } from "@shared/types";
+import {
+  CalendarCheck,
+  CalendarX,
+  ChevronLeft,
+  ChevronRight,
+  TriangleAlert,
+} from "lucide-react";
+import {
+  describeFailure,
+  fetchCalendarEvents,
+  type CalendarEventsResult,
+  type CalendarFailure,
+} from "../lib/api";
+import type { Config } from "../lib/config";
 import { Kicker, SCROLL_PANE, Tag } from "../components/ui";
 import {
   eventLabel,
   eventsByDate,
+  groupByDate,
   eventTime,
   monthGrid,
   monthOf,
@@ -38,12 +52,57 @@ const RANGES: { id: Range; label: string }[] = [
   { id: "month", label: "월" },
 ];
 
+/**
+ * 캘린더에서 실제로 읽어온 일정.
+ *
+ * "아직 안 붙였다(off)" 와 "붙였는데 비었다(live · 0건)" 와 "가져오다 실패했다"
+ * 를 갈라 둔다. 셋 다 화면에는 빈 달력으로 보이지만 사용자가 할 일이 전부
+ * 다르다 — 하나로 뭉뚱그리면 주소가 틀린 걸 한가한 달로 읽는다.
+ */
+type Feed =
+  | { state: "loading" }
+  | { state: "off" }
+  | { state: "live"; calendars: string[]; events: CalendarEvent[]; failed: CalendarFailure[] }
+  | { state: "error"; message: string };
+
+function useCalendarFeed(config: Config, from: string, to: string): Feed {
+  const [feed, setFeed] = useState<Feed>({ state: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    setFeed({ state: "loading" });
+    void fetchCalendarEvents(config, from, to).then((result) => {
+      if (!cancelled) setFeed(toFeed(result));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [config, from, to]);
+
+  return feed;
+}
+
+function toFeed(result: CalendarEventsResult): Feed {
+  if (result.kind !== "ok") {
+    return { state: "error", message: describeFailure(result) };
+  }
+  if (!result.configured) return { state: "off" };
+  return {
+    state: "live",
+    calendars: result.calendars,
+    events: result.events,
+    failed: result.failed,
+  };
+}
+
 export function ScheduleView({
   briefing,
   today,
+  config,
 }: {
   briefing: Briefing;
   today: string;
+  config: Config;
 }) {
   /**
    * 상태는 "고른 날" 하나뿐이다.
@@ -55,18 +114,28 @@ export function ScheduleView({
   const [anchor, setAnchor] = useState(briefing.date);
   const [range, setRange] = useState<Range>("month");
 
-  const events = eventsByDate(briefing);
-  const picked = events.get(anchor) ?? [];
   const { year, month } = monthOf(anchor);
-  const cells = range === "week" ? weekRow(anchor) : monthGrid(year, month);
+  const grid = monthGrid(year, month);
+  const cells = range === "week" ? weekRow(anchor) : grid;
 
-  /** 화살표는 지금 보고 있는 단위만큼 움직인다. */
-  const step = (delta: number) =>
-    setAnchor((at) =>
-      range === "month"
-        ? shiftMonthKeepingDay(at, delta)
-        : shiftISO(at, delta * (range === "week" ? 7 : 1)),
-    );
+  /**
+   * 두 번 받아온다.
+   *
+   * 하나는 지금 보고 있는 달(주·일 보기의 날짜도 이 격자 안에 있다).
+   * 다른 하나는 이번 주와 다음 7일 — 이건 달을 넘겨도 늘 오늘 기준이라
+   * 보이는 달과 같이 움직이면 안 된다.
+   */
+  const feed = useCalendarFeed(config, grid[0].date, grid[grid.length - 1].date);
+  const soon = useCalendarFeed(config, weekStart(today), shiftISO(today, 7));
+
+  const live = feed.state === "live";
+  const events = live ? groupByDate(feed.events) : eventsByDate(briefing);
+  const picked = events.get(anchor) ?? [];
+
+  const upcoming =
+    soon.state === "live"
+      ? soon.events.filter((item) => item.date > today)
+      : briefing.upcoming;
 
   return (
     // lg:min-h-0 — Home.tsx 와 같은 이유. 본문·스트립을 AppShell <main> 의
@@ -85,7 +154,9 @@ export function ScheduleView({
             <Kicker>{rangeLabel(range, anchor)}</Kicker>
             {/* break-keep — 안 주면 좁은 화면에서 "몰 / 려 있죠" 처럼 낱말이 쪼개진다 */}
             <h2 className="max-w-[32ch] break-keep font-display text-2xl leading-tight sm:text-[27px]">
-              {headline(range, anchor, today, cells, events)}
+              {feed.state === "loading"
+                ? "일정을 가져오는 중이에요."
+                : headline(range, anchor, today, cells, events)}
             </h2>
           </div>
 
@@ -113,6 +184,8 @@ export function ScheduleView({
           </div>
         </div>
 
+        <FeedTrouble feed={feed} />
+
         {/* 일 보기에선 달력이 곧 아래 상세라 격자를 그리지 않는다 */}
         {range === "day" ? null : (
           <Grid
@@ -130,11 +203,11 @@ export function ScheduleView({
           <h3 className="font-display text-sm uppercase tracking-[0.1em] text-dim">
             다음 7일
           </h3>
-          {briefing.upcoming.length === 0 ? (
+          {upcoming.length === 0 ? (
             <p className="text-sm text-dim">앞으로 잡힌 일정이 없어요.</p>
           ) : (
             <ul className="flex flex-col">
-              {briefing.upcoming.map((item) => (
+              {upcoming.map((item) => (
                 <li key={item.id} className="border-t border-line">
                   {/* 목록에서도 날짜로 건너뛸 수 있어야 달력과 따로 놀지 않는다 */}
                   <button
@@ -162,10 +235,60 @@ export function ScheduleView({
         data-scrollarea
         className={`flex shrink-0 flex-col gap-7 border-line lg:w-56 lg:border-l lg:pl-6 ${SCROLL_PANE}`}
       >
-        <WeekStats briefing={briefing} />
-        <ConnectedCalendars />
+        <WeekStats briefing={briefing} today={today} soon={soon} />
+        <ConnectedCalendars feed={feed} />
         <RangePicker value={range} onChange={setRange} />
       </aside>
+    </div>
+  );
+
+  /** 화살표는 지금 보고 있는 단위만큼 움직인다. */
+  function step(delta: number) {
+    setAnchor((at) =>
+      range === "month"
+        ? shiftMonthKeepingDay(at, delta)
+        : shiftISO(at, delta * (range === "week" ? 7 : 1)),
+    );
+  }
+}
+
+/**
+ * 가져오다 잘못된 것을 화면에 드러낸다.
+ *
+ * 캘린더 하나가 죽어도 나머지는 그려지기 때문에, 말해주지 않으면
+ * 그 캘린더의 일정이 통째로 사라진 걸 알아챌 방법이 없다.
+ */
+function FeedTrouble({ feed }: { feed: Feed }) {
+  const rows =
+    feed.state === "error"
+      ? [{ label: "캘린더", message: feed.message }]
+      : feed.state === "live"
+        ? feed.failed.map((item) => ({
+            label: item.label,
+            message: item.message,
+          }))
+        : [];
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-xl border border-line bg-fg/[0.04] px-4 py-3">
+      {rows.map((row) => (
+        <p
+          key={row.label + row.message}
+          className="flex items-start gap-2 text-[13px] leading-relaxed break-keep text-mid"
+        >
+          <TriangleAlert
+            size={15}
+            strokeWidth={1.5}
+            className="mt-0.5 shrink-0"
+            aria-hidden="true"
+          />
+          <span>
+            <b className="font-medium">{row.label}</b> · {row.message}
+          </span>
+        </p>
+      ))}
     </div>
   );
 }
@@ -419,16 +542,28 @@ function countIn(
     .reduce((sum, cell) => sum + (events.get(cell.date)?.length ?? 0), 0);
 }
 
-function WeekStats({ briefing }: { briefing: Briefing }) {
-  const weekTotal =
-    briefing.week.reduce((sum, day) => sum + day.count, 0) +
-    briefing.upcoming.length;
-  const emptyDays = briefing.week.filter((day) => day.count === 0).length;
+/**
+ * 이번 주 숫자 셋.
+ *
+ * ⚠ 여기서 보는 "이번 주" 는 화면에 보이는 주가 아니라 **오늘이 든 주**다.
+ *   달을 넘겨 구경하는 중에 이 숫자까지 따라 움직이면 기준이 사라진다.
+ */
+function WeekStats({
+  briefing,
+  today,
+  soon,
+}: {
+  briefing: Briefing;
+  today: string;
+  soon: Feed;
+}) {
+  const week = weekRow(today);
+  const counted = countWeek(week, today, soon, briefing);
 
   const rows = [
-    { label: "오늘", value: briefing.schedule.length, accent: true },
-    { label: "이번 주", value: weekTotal, accent: false },
-    { label: "비어 있는 날", value: emptyDays, accent: false },
+    { label: "오늘", value: counted.today, accent: true },
+    { label: "이번 주", value: counted.week, accent: false },
+    { label: "비어 있는 날", value: counted.empty, accent: false },
   ];
 
   return (
@@ -453,24 +588,79 @@ function WeekStats({ briefing }: { briefing: Briefing }) {
   );
 }
 
-function ConnectedCalendars() {
+/** 이번 주 숫자. 실데이터가 있으면 그걸로, 없으면 브리핑으로 센다. */
+function countWeek(
+  week: MonthCell[],
+  today: string,
+  soon: Feed,
+  briefing: Briefing,
+): { today: number; week: number; empty: number } {
+  if (soon.state !== "live") {
+    return {
+      today: briefing.schedule.length,
+      week:
+        briefing.week.reduce((sum, day) => sum + day.count, 0) +
+        briefing.upcoming.length,
+      empty: briefing.week.filter((day) => day.count === 0).length,
+    };
+  }
+
+  const dates = new Set(week.map((cell) => cell.date));
+  const inWeek = soon.events.filter((event) => dates.has(event.date));
+  const byDate = groupByDate(inWeek);
+
+  return {
+    today: byDate.get(today)?.length ?? 0,
+    week: inWeek.length,
+    empty: week.filter((cell) => !byDate.has(cell.date)).length,
+  };
+}
+
+/**
+ * 붙어 있는 캘린더.
+ *
+ * 붙기 전에는 달력에 오늘과 다음 7일만 들어오는데, 그 사실을 적어두지 않으면
+ * 비어 있는 달을 "연동됐는데 한가한 달" 로 읽는다.
+ */
+function ConnectedCalendars({ feed }: { feed: Feed }) {
   return (
     <section className="flex flex-col gap-2.5">
       <Kicker>연결된 캘린더</Kicker>
       <div className="flex flex-col items-start gap-2 rounded-xl border border-line px-4 py-3.5">
-        <span className="flex items-center gap-2 text-sm">
-          <CalendarX size={16} strokeWidth={1.5} className="text-dim" />
-          네이버 캘린더
-        </span>
-        <Tag>아직 연결 전이에요</Tag>
-        <p className="text-xs leading-relaxed text-dim">
-          연결 전이라 달력에는 오늘과 다음 7일만 채워져요.
-        </p>
+        {feed.state === "live" && feed.calendars.length > 0 ? (
+          <>
+            <span className="flex items-center gap-2 text-sm">
+              <CalendarCheck size={16} strokeWidth={1.5} className="text-accent" />
+              네이버 캘린더
+            </span>
+            <ul className="flex flex-col gap-1">
+              {feed.calendars.map((name) => (
+                <li key={name} className="text-xs break-keep text-dim">
+                  · {name}
+                </li>
+              ))}
+            </ul>
+            <Tag tone="accent">연결됨</Tag>
+          </>
+        ) : (
+          <>
+            <span className="flex items-center gap-2 text-sm">
+              <CalendarX size={16} strokeWidth={1.5} className="text-dim" />
+              네이버 캘린더
+            </span>
+            <Tag>
+              {feed.state === "loading" ? "확인하는 중이에요" : "아직 연결 전이에요"}
+            </Tag>
+            <p className="text-xs leading-relaxed break-keep text-dim">
+              연결 전이라 달력에는 오늘과 다음 7일만 채워져요.
+            </p>
+          </>
+        )}
         <a
           href={`${hrefFor("settings")}#calendar`}
           className="text-[13px] text-accent hover:underline"
         >
-          설정에서 연결하기 →
+          설정에서 {feed.state === "live" ? "관리하기" : "연결하기"} →
         </a>
       </div>
     </section>

@@ -75,6 +75,7 @@ export default function App() {
       }
       sample={briefing?.sample}
       date={date === today ? undefined : date}
+      launchpad={briefing?.launchpad}
     >
       {view === "settings" ? (
         <Settings

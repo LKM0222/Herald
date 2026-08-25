@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
+import type { LaunchItem } from "@shared/types";
 import { hrefFor, MOBILE_ORDER, VIEWS, type ViewDef, type ViewId } from "../lib/views";
+import { Launchpad } from "./Launchpad";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
 import { Tag } from "./ui";
@@ -10,6 +12,7 @@ export function AppShell({
   note,
   sample,
   date,
+  launchpad,
   children,
 }: {
   view: ViewId;
@@ -18,6 +21,8 @@ export function AppShell({
   note?: string;
   sample?: boolean;
   date?: string;
+  /** 브리핑을 못 불러온 화면에선 없다 */
+  launchpad?: LaunchItem[];
   children: ReactNode;
 }) {
   const mobileViews = MOBILE_ORDER.map((id) => VIEWS.find((v) => v.id === id)!);
@@ -58,6 +63,13 @@ export function AppShell({
           {VIEWS.map((item) => (
             <NavItem key={item.id} item={item} current={view} date={date} />
           ))}
+
+          {/* 도면 3A 대로 런치패드가 내비 아래에 붙는다. 좁은 화면 몫은 홈이 맡는다. */}
+          {launchpad && launchpad.length > 0 ? (
+            <div className="mt-auto border-t border-line px-3 pt-5">
+              <Launchpad items={launchpad} />
+            </div>
+          ) : null}
         </nav>
 
         {/* 본문 — 하단 탭바에 가리지 않도록 모바일에서 아래 여백을 준다 */}

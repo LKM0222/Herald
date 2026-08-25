@@ -1,22 +1,30 @@
+import { useState, type ReactNode } from "react";
 import { formatKoreanDate } from "@shared/date";
-import type { Briefing, ScheduleItem } from "@shared/types";
-import { CalendarX } from "lucide-react";
+import type { Briefing } from "@shared/types";
+import { CalendarX, ChevronLeft, ChevronRight } from "lucide-react";
 import { Kicker, Tag } from "../components/ui";
+import {
+  eventLabel,
+  eventsByDate,
+  monthGrid,
+  monthOf,
+  shiftMonth,
+  WEEKDAYS,
+  type DayEvent,
+  type MonthCell,
+} from "../lib/calendar";
 import { hrefFor } from "../lib/views";
 
 /**
- * 일정 탭.
+ * 일정 탭 — 월간 캘린더가 기본이다.
  *
- * ⚠ 캘린더 연동 전이다. 지금 들어오는 건 브리핑에 실린 오늘 일정뿐이고
- *   주간 띠·다음 7일은 더미다. 비어 있으면 비어 있다고 말한다 —
- *   시간표만 그려두면 "연동됐는데 일정이 없는 것"과 구분이 안 된다.
+ * 시간표를 걷어냈다. 하루 두세 건인 달력에서 9시부터 17시까지 빈 줄을 그려두면
+ * 화면 대부분이 아무것도 아닌 것으로 채워진다.
+ *
+ * ⚠ 캘린더 연동 전이라 채워지는 건 오늘과 다음 7일뿐이다. 나머지 날이 비어
+ *   보이는 건 일정이 없어서가 아니라 아직 모르는 것이라, 그 사실을 화면에
+ *   적어둔다 — 안 적으면 "연동됐는데 한가한 달"로 읽힌다.
  */
-const DAY_LABELS = ["월", "화", "수", "목", "금", "토", "일"];
-
-/** 시간표에 그릴 시간대. 이 바깥은 접는다. */
-const HOUR_FROM = 9;
-const HOUR_TO = 17;
-
 export function ScheduleView({
   briefing,
   today,
@@ -24,55 +32,69 @@ export function ScheduleView({
   briefing: Briefing;
   today: string;
 }) {
-  const timed = briefing.schedule.filter((item) => !item.allDay);
-  const allDay = briefing.schedule.filter((item) => item.allDay);
+  const [shown, setShown] = useState(() => monthOf(briefing.date));
+  const cells = monthGrid(shown.year, shown.month);
+  const events = eventsByDate(briefing);
+  const now = monthOf(today);
+  const isCurrentMonth = shown.year === now.year && shown.month === now.month;
 
   return (
     <div className="flex flex-col gap-8 lg:flex-row lg:gap-10">
-      <div className="flex min-w-0 flex-1 flex-col gap-7">
-        <div className="flex flex-col gap-1.5">
-          <Kicker>이번 주</Kicker>
-          <h2 className="max-w-[32ch] font-display text-2xl leading-tight sm:text-[27px]">
-            {summarize(briefing.schedule)}
-          </h2>
+      <div className="flex min-w-0 flex-1 flex-col gap-6">
+        <div className="flex items-end justify-between gap-4">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <Kicker>
+              {shown.year}년 {shown.month}월
+            </Kicker>
+            {/* break-keep — 안 주면 좁은 화면에서 "몰 / 려 있죠" 처럼 낱말이 쪼개진다 */}
+            <h2 className="max-w-[32ch] break-keep font-display text-2xl leading-tight sm:text-[27px]">
+              {summarize(cells, events, today, isCurrentMonth)}
+            </h2>
+          </div>
+          <div className="flex shrink-0 gap-1.5">
+            {/*
+              직전 값을 함수로 받는다. shown 을 그대로 읽으면 빠르게 두 번 누를 때
+              두 번 다 같은 달에서 계산해 한 번이 사라진다.
+            */}
+            <MonthStep
+              label="지난 달"
+              onClick={() =>
+                setShown((at) => shiftMonth(at.year, at.month, -1))
+              }
+            >
+              <ChevronLeft size={18} strokeWidth={1.5} aria-hidden="true" />
+            </MonthStep>
+            <MonthStep
+              label="다음 달"
+              onClick={() => setShown((at) => shiftMonth(at.year, at.month, 1))}
+            >
+              <ChevronRight size={18} strokeWidth={1.5} aria-hidden="true" />
+            </MonthStep>
+          </div>
         </div>
 
-        <WeekStrip week={briefing.week} today={today} />
+        <MonthCalendar cells={cells} events={events} today={today} />
 
-        <section className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line pb-2">
-            <h3 className="font-display text-sm uppercase tracking-[0.1em] text-dim">
-              오늘 시간표
-            </h3>
-            <span className="text-xs text-dim">
-              {allDay.length === 0
-                ? "종일 일정은 없어요"
-                : `종일 ${allDay.length}건`}
-            </span>
-          </div>
-          <Timetable items={timed} />
-        </section>
-
-        <section className="flex flex-col gap-3">
+        <section className="flex flex-col gap-2.5">
           <h3 className="font-display text-sm uppercase tracking-[0.1em] text-dim">
             다음 7일
           </h3>
           {briefing.upcoming.length === 0 ? (
             <p className="text-sm text-dim">앞으로 잡힌 일정이 없어요.</p>
           ) : (
-            <ul className="flex flex-col border-t border-line">
+            <ul className="flex flex-col">
               {briefing.upcoming.map((item) => (
                 <li
                   key={item.id}
-                  className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5 border-b border-line py-2.5 text-sm"
+                  className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5 border-t border-line py-2.5"
                 >
-                  <span className="w-28 shrink-0 font-display text-dim">
+                  <span className="w-24 shrink-0 text-[13px] text-dim">
                     {formatKoreanDate(item.date)}
                   </span>
-                  <span className="w-14 shrink-0 font-display tabular-nums text-accent">
-                    {item.allDay ? "종일" : item.time}
+                  <span className="w-12 shrink-0 font-display text-sm tabular-nums">
+                    {eventLabel(item)}
                   </span>
-                  <span className="min-w-0 flex-1">{item.title}</span>
+                  <span className="min-w-0 flex-1 text-sm">{item.title}</span>
                 </li>
               ))}
             </ul>
@@ -83,107 +105,151 @@ export function ScheduleView({
       <aside className="flex shrink-0 flex-col gap-7 border-line lg:w-56 lg:border-l lg:pl-6">
         <WeekStats briefing={briefing} />
         <ConnectedCalendars />
+        <RangePicker />
       </aside>
     </div>
   );
 }
 
-function summarize(items: ScheduleItem[]): string {
-  if (items.length === 0) return "오늘은 비어 있어요.";
-  const first = items.find((item) => !item.allDay);
-  return first
-    ? `오늘은 ${items.length}건이에요. 첫 일정은 ${first.time} 이죠.`
-    : `오늘은 종일 일정 ${items.length}건이에요.`;
+/** 달 넘김. 도면은 34px 원이지만 손가락이 닿는 곳이라 40px 로 올렸다. */
+function MonthStep({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="flex size-10 items-center justify-center rounded-full border border-line hover:bg-fg/[0.07] active:bg-fg/[0.14]"
+    >
+      {children}
+    </button>
+  );
 }
 
-/** 요일 띠. 그날 일정 수만큼 점을 찍는다 (최대 3개). */
-function WeekStrip({
-  week,
+function MonthCalendar({
+  cells,
+  events,
   today,
 }: {
-  week: Briefing["week"];
+  cells: MonthCell[];
+  events: Map<string, DayEvent[]>;
   today: string;
 }) {
-  if (week.length === 0) return null;
-
   return (
-    <div className="grid grid-cols-7 gap-1.5">
-      {week.map((day, index) => {
-        const isToday = day.date === today;
-        return (
-          <div
-            key={day.date}
-            className={`flex flex-col items-center gap-1 rounded-xl border py-2.5 ${
-              isToday ? "border-accent bg-accent-soft" : "border-line"
+    <div className="flex flex-col gap-1.5">
+      <div className="grid grid-cols-7 gap-1 sm:gap-2">
+        {WEEKDAYS.map((day, index) => (
+          <span
+            key={day}
+            className={`text-center text-[11px] tracking-[0.06em] ${
+              index >= 5 ? "text-mid" : "text-dim"
             }`}
           >
-            <span className="text-[11px] text-dim">{DAY_LABELS[index]}</span>
-            <span
-              className={`font-display text-lg ${isToday ? "text-accent" : ""}`}
-            >
-              {Number(day.date.slice(8, 10))}
-            </span>
-            <span className="flex h-1.5 items-center gap-0.5">
-              {Array.from({ length: Math.min(day.count, 3) }, (_, dot) => (
-                <span
-                  key={dot}
-                  className={`size-1 rounded-full ${
-                    isToday ? "bg-accent" : "bg-dim"
-                  }`}
-                />
-              ))}
-            </span>
-          </div>
-        );
-      })}
+            {day}
+          </span>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1 sm:gap-2">
+        {cells.map((cell) => (
+          <DayCell
+            key={cell.date}
+            cell={cell}
+            events={events.get(cell.date) ?? []}
+            isToday={cell.date === today}
+          />
+        ))}
+      </div>
     </div>
   );
 }
 
 /**
- * 시간대별 격자.
- * 일정은 시작 시각이 속한 칸에 붙인다 — 분 단위 위치 계산은 실제 데이터가
- * 들어온 뒤에 해도 늦지 않다.
+ * 하루 칸.
+ *
+ * 320px 에서 한 칸은 40px 안쪽이라 "10:00 [샘플] 일정" 이 절대 안 들어간다.
+ * 좁을 땐 점으로 개수만 알리고, 넓어지면 도면대로 칩을 편다.
  */
-function Timetable({ items }: { items: ScheduleItem[] }) {
-  const hours = Array.from(
-    { length: HOUR_TO - HOUR_FROM + 1 },
-    (_, index) => HOUR_FROM + index,
-  );
-
+function DayCell({
+  cell,
+  events,
+  isToday,
+}: {
+  cell: MonthCell;
+  events: DayEvent[];
+  isToday: boolean;
+}) {
   return (
-    <div className="flex flex-col">
-      {hours.map((hour) => {
-        const label = `${String(hour).padStart(2, "0")}:00`;
-        const here = items.filter(
-          (item) => Number(item.time.slice(0, 2)) === hour,
-        );
-        return (
-          <div
-            key={hour}
-            className="flex min-h-11 items-start gap-4 border-b border-line py-1.5"
+    <div
+      className={`flex min-h-14 min-w-0 flex-col gap-1 rounded-lg border p-1.5 sm:min-h-[84px] sm:rounded-xl sm:p-2 ${
+        isToday ? "border-accent bg-accent-soft" : "border-line"
+      } ${cell.inMonth ? "" : "opacity-45"}`}
+    >
+      <span
+        className={`font-display text-sm tabular-nums sm:text-[15px] ${
+          isToday ? "text-accent" : cell.weekend ? "text-mid" : ""
+        }`}
+      >
+        {cell.day}
+      </span>
+
+      {/* 좁은 화면 — 점으로 개수만 */}
+      <span className="flex gap-0.5 sm:hidden">
+        {events.slice(0, 3).map((event) => (
+          <span
+            key={event.id}
+            className={`size-1 rounded-full ${isToday ? "bg-accent" : "bg-dim"}`}
+          />
+        ))}
+      </span>
+
+      {/* 넓은 화면 — 도면대로 칩 */}
+      <span className="hidden min-w-0 flex-col gap-1 sm:flex">
+        {events.map((event) => (
+          <span
+            key={event.id}
+            title={`${eventLabel(event)} ${event.title}`}
+            className={`truncate rounded-md px-1.5 py-0.5 text-[11px] leading-[1.35] ${
+              isToday ? "bg-surface" : "bg-accent-soft text-accent-ink"
+            }`}
           >
-            <span className="w-12 shrink-0 pt-1.5 font-display tabular-nums text-xs text-dim">
-              {label}
-            </span>
-            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-              {here.map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-lg border-l-2 border-accent bg-accent-soft px-3 py-1.5"
-                >
-                  <span className="block text-sm">{item.title}</span>
-                  <span className="block text-[11px] text-dim">
-                    {item.endTime ? `${item.time} – ${item.endTime}` : item.time}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })}
+            {eventLabel(event)} {event.title}
+          </span>
+        ))}
+      </span>
     </div>
   );
+}
+
+/** 도면의 "이번 달은 네 건이에요. 오늘 두 건이 몰려 있죠." 자리. */
+function summarize(
+  cells: MonthCell[],
+  events: Map<string, DayEvent[]>,
+  today: string,
+  isCurrentMonth: boolean,
+): string {
+  const total = cells
+    .filter((cell) => cell.inMonth)
+    .reduce((sum, cell) => sum + (events.get(cell.date)?.length ?? 0), 0);
+
+  if (!isCurrentMonth) {
+    return total === 0
+      ? "이 달은 아직 아무것도 없어요."
+      : `이 달은 ${total}건이에요.`;
+  }
+  if (total === 0) return "이번 달은 아직 비어 있어요.";
+
+  const todayCount = events.get(today)?.length ?? 0;
+  return todayCount === 0
+    ? `이번 달은 ${total}건이에요. 오늘은 비어 있죠.`
+    : `이번 달은 ${total}건이에요. 오늘 ${todayCount}건이 몰려 있죠.`;
 }
 
 function WeekStats({ briefing }: { briefing: Briefing }) {
@@ -230,12 +296,55 @@ function ConnectedCalendars() {
           네이버 캘린더
         </span>
         <Tag>아직 연결 전이에요</Tag>
+        <p className="text-xs leading-relaxed text-dim">
+          연결 전이라 달력에는 오늘과 다음 7일만 채워져요.
+        </p>
         <a
           href={`${hrefFor("settings")}#calendar`}
           className="text-[13px] text-accent hover:underline"
         >
           설정에서 연결하기 →
         </a>
+      </div>
+    </section>
+  );
+}
+
+/** 일 · 주 · 월. 지금 그릴 수 있는 건 월뿐이라 나머지는 눌리지 않는다. */
+const RANGES = [
+  { id: "day", label: "일" },
+  { id: "week", label: "주" },
+  { id: "month", label: "월" },
+] as const;
+
+function RangePicker() {
+  return (
+    <section className="flex flex-col gap-2.5">
+      <Kicker>보기</Kicker>
+      <div className="flex overflow-hidden rounded-xl border border-line">
+        {RANGES.map((range) => {
+          const active = range.id === "month";
+          return (
+            <button
+              key={range.id}
+              type="button"
+              disabled={!active}
+              aria-pressed={active}
+              title={
+                active
+                  ? "월간 보기"
+                  : `${range.label}간 보기 — 다음 단계에서 연결됩니다`
+              }
+              className={`min-h-10 flex-1 border-l border-line text-sm first:border-l-0 ${
+                active
+                  ? "bg-accent font-medium text-bg"
+                  : "cursor-not-allowed text-dim opacity-45"
+              }`}
+            >
+              {range.label}
+            </button>
+          );
+        })}
       </div>
     </section>
   );

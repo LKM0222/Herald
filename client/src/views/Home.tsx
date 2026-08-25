@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { formatRelative } from "@shared/date";
+import { formatKoreanDate, formatRelative } from "@shared/date";
 import type { Briefing, NewsItem } from "@shared/types";
+import { Bookmark, ExternalLink, Search, Zap } from "lucide-react";
+import { Launchpad } from "../components/Launchpad";
+import { Kicker, LinkButton, PendingButton } from "../components/ui";
 import {
-  Bookmark,
-  ExternalLink,
-  Folder,
-  Globe,
-  Search,
-  Sunset,
-  Zap,
-} from "lucide-react";
-import { Kicker, LinkButton, PendingButton, Tag } from "../components/ui";
+  eventLabel,
+  eventsByDate,
+  monthGrid,
+  monthOf,
+  WEEKDAYS,
+} from "../lib/calendar";
 import { hrefFor } from "../lib/views";
 
 /**
@@ -49,8 +49,17 @@ export function Home({
       {/* 우측 스트립 — 모바일에선 본문 아래로 내려온다 */}
       <aside className="flex shrink-0 flex-col gap-7 border-line lg:w-56 lg:border-l lg:pl-6">
         <Stats briefing={briefing} />
-        <Schedule briefing={briefing} />
-        <Launchpad briefing={briefing} />
+        <MiniCalendar briefing={briefing} date={date} />
+        {/*
+          런치패드는 도면(3A)에서 좌측 내비 아래로 내려갔다. 그 내비가 PC 전용이라
+          모바일에선 갈 곳이 없어져, 좁을 때만 여기에 남긴다.
+        */}
+        <div className="md:hidden">
+          <Launchpad
+            items={briefing.launchpad}
+            listClassName="grid grid-cols-2 gap-1.5"
+          />
+        </div>
       </aside>
     </div>
   );
@@ -437,57 +446,93 @@ function Stats({ briefing }: { briefing: Briefing }) {
   );
 }
 
-function Schedule({ briefing }: { briefing: Briefing }) {
-  return (
-    <section className="flex flex-col gap-2.5">
-      <Kicker>일정</Kicker>
-      {briefing.schedule.length === 0 ? (
-        <p className="text-[13px] text-dim">오늘은 일정이 없어요</p>
-      ) : (
-        <div className="flex flex-col gap-2 text-[13px]">
-          {briefing.schedule.map((item) => (
-            <div key={item.id} className="flex gap-2.5">
-              <span className="font-display tabular-nums text-accent">
-                {item.allDay ? "종일" : item.time}
-              </span>
-              <span>{item.title}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
+/**
+ * 오른쪽 스트립의 미니 월간 달력 (도면 3A).
+ *
+ * 오늘 일정 목록을 대신한다 — 목록만 있으면 "오늘"밖에 못 보지만, 달력이면
+ * 이번 달 어디가 비었는지가 한눈에 들어온다.
+ * 날짜를 누르면 아래 목록이 그날로 바뀐다.
+ *
+ * 손가락 기준 40px 은 좁은 화면에서 확보된다 — 그때는 스트립이 화면 전폭이라
+ * 한 칸이 41px 안팎이 된다. PC 스트립(224px)에서는 마우스가 쓴다.
+ */
+function MiniCalendar({
+  briefing,
+  date,
+}: {
+  briefing: Briefing;
+  date?: string;
+}) {
+  const [selected, setSelected] = useState(briefing.date);
+  const { year, month } = monthOf(briefing.date);
+  const events = eventsByDate(briefing);
+  const picked = events.get(selected) ?? [];
+
+  // 이번 달이 끝난 뒤의 빈 줄은 자른다. 미니 달력에서 한 줄은 꽤 큰 자리다.
+  const cells = monthGrid(year, month);
+  const lastReal = cells.reduce(
+    (last, cell, index) => (cell.inMonth ? index : last),
+    0,
   );
-}
+  const visible = cells.slice(0, Math.ceil((lastReal + 1) / 7) * 7);
 
-const LAUNCH_ICONS = {
-  "작업 시작": Zap,
-  "하루 마무리": Sunset,
-  탐색기: Folder,
-  크롬: Globe,
-} as const;
-
-function Launchpad({ briefing }: { briefing: Briefing }) {
   return (
-    <section className="flex flex-col gap-2.5">
-      <Kicker>런치패드</Kicker>
-      <span className="self-start">
-        <Tag>핸들러를 아직 안 깔았어요</Tag>
-      </span>
-      <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-1">
-        {briefing.launchpad.map((item) => {
-          const Icon =
-            LAUNCH_ICONS[item.label as keyof typeof LAUNCH_ICONS] ?? Zap;
-          return (
-            <PendingButton
-              key={item.id}
-              title={item.label}
-              className="justify-start"
+    <section className="flex flex-col gap-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <Kicker>{month}월</Kicker>
+        <a
+          href={hrefFor("schedule", date)}
+          className="text-[11px] text-accent hover:underline"
+        >
+          일정 탭 →
+        </a>
+      </div>
+
+      <div className="grid grid-cols-7 gap-0.5 text-center">
+        {WEEKDAYS.map((day) => (
+          <span key={day} className="pb-0.5 text-[9px] text-dim">
+            {day}
+          </span>
+        ))}
+        {visible.map((cell) =>
+          cell.inMonth ? (
+            <button
+              key={cell.date}
+              type="button"
+              onClick={() => setSelected(cell.date)}
+              aria-pressed={cell.date === selected}
+              className={`flex min-h-10 items-center justify-center rounded-md font-display text-xs tabular-nums ${
+                cell.date === selected
+                  ? "bg-accent text-bg"
+                  : events.has(cell.date)
+                    ? "text-accent hover:bg-fg/[0.07]"
+                    : "hover:bg-fg/[0.07]"
+              }`}
             >
-              <Icon size={16} strokeWidth={1.5} />
-              {item.label}
-            </PendingButton>
-          );
-        })}
+              {cell.day}
+            </button>
+          ) : (
+            <span key={cell.date} />
+          ),
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5 border-t border-line pt-2">
+        <span className="text-[11px] text-dim">
+          {formatKoreanDate(selected)}
+        </span>
+        {picked.length === 0 ? (
+          <span className="text-xs text-mid">이 날은 비어 있어요</span>
+        ) : (
+          picked.map((item) => (
+            <div key={item.id} className="flex gap-2.5 text-xs">
+              <span className="shrink-0 font-display tabular-nums text-accent">
+                {eventLabel(item)}
+              </span>
+              <span className="min-w-0">{item.title}</span>
+            </div>
+          ))
+        )}
       </div>
     </section>
   );

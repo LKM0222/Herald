@@ -21,6 +21,7 @@ import {
   saveSecret,
   saveSettings,
   setPassword,
+  toggleSubscription,
   type SaveSecretResult,
 } from "../lib/api";
 import type { CalendarSubscription, SecretStatus } from "@shared/types";
@@ -473,6 +474,9 @@ function CalendarSection({ config }: { config: Config }) {
   const naverPassword = legacy?.find((item) => item.name === "naver_password");
   const hasLegacy = Boolean(naverId?.set || naverPassword?.set);
   const connected = (subscriptions?.length ?? 0) > 0;
+  const active = subscriptions?.filter((item) => item.enabled).length ?? 0;
+  // 붙어는 있는데 다 꺼둔 상태. "연결 전" 과 섞으면 화면이 거짓말을 한다.
+  const allOff = connected && active === 0;
   const ready = url.trim() !== "" && !busy;
 
   async function addUrl() {
@@ -491,6 +495,29 @@ function CalendarSection({ config }: { config: Config }) {
       setMessage({ tone: "error", text: rejectionText(result.message) });
       return;
     }
+    setMessage({ tone: "error", text: describe(result) });
+  }
+
+  /**
+   * 체크박스. 빼기와 달리 주소를 지우지 않으니 되돌리는 값이 싸다 —
+   * 그래서 먼저 반영하고 실패하면 되돌린다. 늦게 움직이면 안 눌린 줄 안다.
+   */
+  async function toggle(item: CalendarSubscription) {
+    if (!subscriptions) return;
+    const before = subscriptions;
+    setSubscriptions(
+      subscriptions.map((entry) =>
+        entry.id === item.id ? { ...entry, enabled: !entry.enabled } : entry,
+      ),
+    );
+    setMessage(null);
+
+    const result = await toggleSubscription(config, item.id, !item.enabled);
+    if (result.kind === "ok") {
+      setSubscriptions(result.subscriptions);
+      return;
+    }
+    setSubscriptions(before); // 되돌린다
     setMessage({ tone: "error", text: describe(result) });
   }
 
@@ -525,8 +552,16 @@ function CalendarSection({ config }: { config: Config }) {
     <Section
       id="calendar"
       title="캘린더"
-      note="일정 탭과 아침 브리핑에 띄울 캘린더를 주소로 붙여요. 주소는 서버에만 암호화되어 저장되고 브라우저엔 남지 않습니다."
-      aside={connected ? <Tag tone="accent">연결됨</Tag> : <Tag>연결 전</Tag>}
+      note="일정 탭과 아침 브리핑에 띄울 캘린더를 주소로 붙여요. 체크한 캘린더만 불러옵니다. 주소는 서버에만 암호화되어 저장되고 브라우저엔 남지 않습니다."
+      aside={
+        allOff ? (
+          <Tag>모두 꺼둠</Tag>
+        ) : connected ? (
+          <Tag tone="accent">연결됨</Tag>
+        ) : (
+          <Tag>연결 전</Tag>
+        )
+      }
     >
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
@@ -543,14 +578,32 @@ function CalendarSection({ config }: { config: Config }) {
                   key={item.id}
                   className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3"
                 >
-                  <span className="flex min-w-0 flex-col gap-0.5">
-                    <span className="font-display text-sm break-keep">
-                      {item.label}
+                  {/*
+                    체크박스와 이름만 label 로 묶는다. 줄 전체를 묶으면
+                    빼기 버튼을 눌러도 체크가 같이 토글된다.
+                  */}
+                  <label className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={item.enabled}
+                      onChange={() => void toggle(item)}
+                      disabled={busy}
+                      className="size-4 shrink-0 accent-[var(--accent)]"
+                    />
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span
+                        className={`font-display text-sm break-keep ${
+                          item.enabled ? "" : "text-dim"
+                        }`}
+                      >
+                        {item.label}
+                      </span>
+                      <span className="text-xs text-dim break-keep">
+                        네이버 캘린더{item.owner ? ` · ${item.owner}` : ""}
+                        {item.enabled ? "" : " · 안 불러오는 중"}
+                      </span>
                     </span>
-                    <span className="text-xs text-dim">
-                      네이버 캘린더{item.owner ? ` · ${item.owner}` : ""}
-                    </span>
-                  </span>
+                  </label>
                   <Button
                     onClick={() => void drop(item.id)}
                     disabled={busy}
@@ -571,6 +624,17 @@ function CalendarSection({ config }: { config: Config }) {
               </span>
             </div>
           )}
+
+          {/*
+            다 꺼두면 일정 탭이 빈 달력이 된다. 여기 안 적으면 나중에
+            그 빈 화면을 보고 연동이 끊긴 줄 안다.
+          */}
+          {allOff ? (
+            <p className="text-xs leading-relaxed text-dim break-keep">
+              지금은 전부 꺼져 있어서 일정 탭에 아무것도 안 들어와요.
+              캘린더는 그대로 있으니 체크만 켜면 됩니다.
+            </p>
+          ) : null}
 
           {hasLegacy ? (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3">

@@ -6,7 +6,8 @@
     "dev": "next dev -p 3100",
     "build": "next build",
     "start": "next start -p 3100",
-    "lint": "eslint"
+    "lint": "eslint",
+    "news:dump": "node scripts/dump-news.mjs"
   },
   "dependencies": {
     "fast-xml-parser": "^5.11.0",

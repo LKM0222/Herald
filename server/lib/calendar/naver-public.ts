@@ -106,6 +106,12 @@ export type CalendarInfo = {
   /** 네이버에서 붙인 캘린더 이름 */
   name: string;
   owner: string;
+  /**
+   * 네이버에서 고른 캘린더 색. "cce2ff" 처럼 # 없는 6자리다.
+   * 우리가 정한 색이 아니라 **캘린더가 들고 온 값**이라 그대로 싣는다 —
+   * 여러 개를 붙였을 때 이름 말고 색으로도 갈라 보려는 것이다.
+   */
+  color?: string;
 };
 
 /**
@@ -134,7 +140,12 @@ export async function fetchInfo(key: string): Promise<CalendarInfo> {
     );
   }
 
-  let info: { name?: unknown; ownerId?: unknown; opened?: unknown };
+  let info: {
+    name?: unknown;
+    ownerId?: unknown;
+    opened?: unknown;
+    personal?: { colorCode?: unknown };
+  };
   try {
     info = JSON.parse(found[1]) as typeof info;
   } catch {
@@ -145,11 +156,18 @@ export async function fetchInfo(key: string): Promise<CalendarInfo> {
     throw new NaverPublicError("not_found", "공개가 꺼져 있는 캘린더예요");
   }
 
+  // 색은 있으면 좋고 없어도 그만이라 실패시키지 않는다. 다만 그대로 믿지도
+  // 않는다 — 남의 HTML 에서 긁어온 값이 style 로 들어가기 때문이다.
+  const raw = info.personal?.colorCode;
+  const color =
+    typeof raw === "string" && /^[0-9a-fA-F]{6}$/.test(raw) ? raw : undefined;
+
   return {
     key,
     name:
       typeof info.name === "string" && info.name ? info.name : "네이버 캘린더",
     owner: typeof info.ownerId === "string" ? info.ownerId : "",
+    ...(color ? { color } : {}),
   };
 }
 
@@ -247,9 +265,22 @@ function expand(raw: RawSchedule, label: string): CalendarEvent[] {
     // "10:00" 은 그날 10시에 시작한다는 뜻이 아니라서 거짓말이 된다.
     const asAllDay = allDay || !single;
 
+    const spanId = `${base}#${index}`;
+    /*
+      걸친 날들을 한 일정으로 되묶을 수 있게 범위를 함께 싣는다.
+
+      ⚠ 여기서 계산해야 한다. 조회 창 밖으로 잘라내는 filter 는 이 뒤에 도는데,
+        잘린 뒤에 범위를 재면 "9월에 보이는 첫 날" 이 시작일로 둔갑한다 —
+        8/25 에 시작해 9/7 에 끝나는 일정을 9월에서 보면 실제로 그렇다.
+        달력이 "여기서 시작" 과 "이전부터 이어짐" 을 가르는 근거가 이 값이다.
+    */
+    const spanned = !single
+      ? { spanId, spanStart: days[0], spanEnd: days[days.length - 1] }
+      : {};
+
     return days.map((date) => ({
       // 하루씩 펼치면 같은 id 가 여러 칸에 앉는다. 날짜를 붙여 갈라둔다.
-      id: `${base}#${index}#${date}`,
+      id: `${spanId}#${date}`,
       date,
       allDay: asAllDay,
       time: asAllDay ? "" : start.time,
@@ -257,6 +288,7 @@ function expand(raw: RawSchedule, label: string): CalendarEvent[] {
       title,
       ...(place ? { place } : {}),
       calendar: label,
+      ...spanned,
     }));
   });
 }

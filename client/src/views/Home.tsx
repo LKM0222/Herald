@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useState } from "react";
 import { formatKoreanDate, formatRelative } from "@shared/date";
 import type { Briefing, NewsItem } from "@shared/types";
 import { Bookmark, ExternalLink, Search, Zap } from "lucide-react";
 import { Launchpad } from "../components/Launchpad";
+import { SnapCarousel } from "../components/SnapCarousel";
 import { Kicker, LinkButton, PendingButton, SCROLL_PANE } from "../components/ui";
 import {
   eventLabel,
@@ -63,12 +64,12 @@ export function Home({
         data-scrollarea
         className={`flex min-w-0 flex-1 flex-col gap-6 ${SCROLL_PANE}`}
       >
-        <div className="flex flex-col gap-1.5">
-          <Kicker>오늘의 Herald</Kicker>
-          <h2 className="max-w-[32ch] font-display text-2xl leading-tight sm:text-[27px]">
-            {briefing.headline}
-          </h2>
-        </div>
+        {/*
+          큰 제목을 걷어냈다. 화면마다 제 이름을 크게 이고 있으면 정작
+          주인공(첫 기사 제목)과 크기 싸움을 한다 — 어디에 있는지는 왼쪽
+          내비가 이미 말해주므로 여기선 작은 라벨 하나로 충분하다.
+        */}
+        <Kicker>오늘의 Herald</Kicker>
 
         <LeadCarousel leads={leads} total={briefing.news.length} date={date} />
 
@@ -106,171 +107,12 @@ export function Home({
   );
 }
 
-/** 드래그로 볼 최소 이동량(px). 이보다 덜 움직였으면 클릭이다. */
-const DRAG_SLOP = 6;
-
-/**
- * 스크롤 위치에 가장 가까운 카드.
- *
- * 카드 폭은 트랙 폭과 다르다(좌우 여백·간격). 나눗셈으로 넘겨짚지 않는다.
- * ⚠ offsetLeft 는 "가장 가까운 위치 지정 조상" 기준이라, 이 비교가 성립하려면
- *   트랙이 offsetParent 여야 한다 — 그래서 트랙에 relative 가 붙어 있다.
- */
-function nearestIndex(track: HTMLElement): number {
-  const cards = [...track.children] as HTMLElement[];
-  let nearest = 0;
-  let best = Infinity;
-  cards.forEach((card, index) => {
-    const distance = Math.abs(card.offsetLeft - track.scrollLeft);
-    if (distance < best) {
-      best = distance;
-      nearest = index;
-    }
-  });
-  return nearest;
-}
-
-/** 카드 위치를 그대로 목적지로 쓴다 — 폭을 가정하면 snap 이 끄는 자리와 어긋난다. */
-function scrollToCard(track: HTMLElement, index: number) {
-  const card = track.children[index] as HTMLElement | undefined;
-  // scrollIntoView 를 쓰지 않는 이유: 세로 스크롤까지 건드린다.
-  if (card) track.scrollTo({ left: card.offsetLeft, behavior: "smooth" });
-}
-
-/**
- * 마우스로 붙잡고 끌어서 넘기기.
- *
- * `overflow-x: auto` 는 터치·휠·트랙패드로만 움직인다. 마우스로 끄는 동작은
- * 어느 브라우저에도 없어서 직접 만들어야 한다.
- *
- * 터치는 일부러 건드리지 않는다 — 가로채는 순간 관성 스크롤을 잃는다.
- * 그래서 pointerType 이 mouse 일 때만 개입한다.
- */
-function useDragScroll(ref: RefObject<HTMLDivElement | null>) {
-  useEffect(() => {
-    const track = ref.current;
-    if (!track) return;
-
-    let dragging = false;
-    let startX = 0;
-    let startScroll = 0;
-    let moved = 0;
-    let suppressClick = false;
-    let restoreTimer = 0;
-
-    /**
-     * ⚠ 복구 예약은 한 번에 하나만 살아 있어야 한다.
-     *
-     * 남겨두면 다음 드래그 도중에 터진다. 그 순간 snap 이 되살아나
-     * scrollLeft 를 쓸 때마다 스냅 지점으로 되끌려 드래그가 죽는다.
-     * 그리고 죽은 채로는 정렬 스크롤도 안 나니 scrollend 가 또 안 와서
-     * 예약이 다시 남는다 — 한 번 빠지면 못 나오는 고리다.
-     */
-    const cancelRestore = () => {
-      window.clearTimeout(restoreTimer);
-      restoreTimer = 0;
-      track.removeEventListener("scrollend", finishRestore);
-    };
-
-    // 화살표 함수여야 위의 `if (!track) return` 이 좁혀둔 타입이 살아남는다.
-    const finishRestore = () => {
-      cancelRestore();
-      track.style.scrollSnapType = "";
-    };
-
-    /**
-     * 정렬 스크롤이 끝나면 snap 을 되돌린다.
-     *
-     * 도는 도중에 되돌리면 mandatory 스냅이 즉시 잡아채 이동이 툭 끊긴다.
-     * 이미 제자리라 스크롤이 아예 안 일어나는 경우(마지막 카드 너머로 민 뒤가
-     * 그렇다)엔 scrollend 가 오지 않으므로 타이머를 함께 건다.
-     */
-    const scheduleRestore = () => {
-      cancelRestore();
-      track.addEventListener("scrollend", finishRestore);
-      restoreTimer = window.setTimeout(finishRestore, 500);
-    };
-
-    /** 끌고 놓은 손끝이 버튼 위였다고 그 버튼이 눌리면 안 된다. */
-    const swallowClick = (event: MouseEvent) => {
-      // detail 0 은 키보드로 누른 click 이다 — 드래그의 잔상이 아니니 통과시킨다.
-      if (!suppressClick || event.detail === 0) return;
-      suppressClick = false;
-      event.preventDefault();
-      event.stopPropagation();
-    };
-
-    const onPointerDown = (event: PointerEvent) => {
-      if (event.pointerType !== "mouse" || event.button !== 0) return;
-      cancelRestore();
-      dragging = true;
-      moved = 0;
-      suppressClick = false;
-      startX = event.clientX;
-      startScroll = track.scrollLeft;
-      // snap 을 켜 둔 채 scrollLeft 를 만지면 브라우저가 매 프레임 스냅 지점으로
-      // 되끌어당겨 드래그가 통째로 씹힌다.
-      track.style.scrollSnapType = "none";
-      track.style.cursor = "grabbing";
-      // 텍스트가 잡히거나 링크가 통째로 끌려가는(네이티브 drag) 걸 막는다.
-      event.preventDefault();
-    };
-
-    // 창 전체에서 듣는다. 트랙 밖으로 손이 나가도 드래그가 이어져야 하고,
-    // setPointerCapture 를 쓰면 뒤따르는 click 까지 트랙으로 재조준돼
-    // 카드 안 링크가 눌리지 않는다.
-    const onPointerMove = (event: PointerEvent) => {
-      if (!dragging) return;
-      // 창 밖에서 손을 떼면 pointerup 이 오지 않는다. 그대로 두면 버튼을 뗀
-      // 뒤에도 카드가 마우스를 따라다닌다.
-      if (event.buttons === 0) {
-        onPointerUp();
-        return;
-      }
-      const delta = event.clientX - startX;
-      moved = Math.max(moved, Math.abs(delta));
-      track.scrollLeft = startScroll - delta;
-    };
-
-    const onPointerUp = () => {
-      if (!dragging) return;
-      dragging = false;
-      track.style.cursor = "";
-
-      // 리스너를 달았다 떼는 대신 깃발만 세운다 — 뗄 시점을 타이머로 재면
-      // 그 타이머가 또 남는다.
-      suppressClick = moved > DRAG_SLOP;
-
-      // 손을 뗀 자리는 카드 경계가 아니다. 가까운 카드로 정렬한 뒤 snap 을 되돌린다.
-      scrollToCard(track, nearestIndex(track));
-      scheduleRestore();
-    };
-
-    track.addEventListener("click", swallowClick, { capture: true });
-    track.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-    window.addEventListener("pointercancel", onPointerUp);
-    return () => {
-      track.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-      window.removeEventListener("pointercancel", onPointerUp);
-      track.removeEventListener("click", swallowClick, true);
-      cancelRestore();
-      track.style.scrollSnapType = "";
-      track.style.cursor = "";
-    };
-  }, [ref]);
-}
 
 /**
  * 좌우로 넘기는 리드 카드.
  *
- * 자바스크립트 캐러셀을 만들지 않고 `scroll-snap` 에 맡긴다 —
- * 터치 관성·접근성·키보드 조작이 브라우저 기본 동작으로 따라온다.
- * 마우스 드래그만 브라우저가 안 해주는 부분이라 useDragScroll 로 보탠다.
- * 점 표시는 스크롤 위치를 읽어 갱신한다.
+ * 넘기는 동작 자체는 SnapCarousel 에 있다 — 뉴스 탭 1층이 같은 동작을 쓴다.
+ * 여기 남은 건 홈에만 있는 것들이다: 빈 상태 문구와 뉴스 탭으로 보내는 링크.
  */
 function LeadCarousel({
   leads,
@@ -281,25 +123,6 @@ function LeadCarousel({
   total: number;
   date?: string;
 }) {
-  const trackRef = useRef<HTMLDivElement>(null);
-  const [active, setActive] = useState(0);
-
-  useEffect(() => {
-    const track = trackRef.current;
-    if (!track) return;
-    const onScroll = () => setActive(nearestIndex(track));
-    track.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
-    return () => track.removeEventListener("scroll", onScroll);
-  }, [leads.length]);
-
-  useDragScroll(trackRef);
-
-  function goTo(index: number) {
-    const track = trackRef.current;
-    if (track) scrollToCard(track, index);
-  }
-
   if (leads.length === 0) {
     return (
       <p className="rounded-2xl border border-line bg-surface p-6 text-sm text-dim">
@@ -310,12 +133,9 @@ function LeadCarousel({
 
   return (
     <div className="flex flex-col gap-3.5">
-      <div
-        ref={trackRef}
-        className={`relative -mx-1 flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
-          // 넘길 게 없으면 잡히는 척하지 않는다
-          leads.length > 1 ? "cursor-grab" : ""
-        }`}
+      <SnapCarousel
+        count={leads.length}
+        label={(index) => `${index + 1}번째 기사`}
       >
         {leads.map((item, index) => (
           <LeadCard
@@ -325,24 +145,7 @@ function LeadCarousel({
             total={leads.length}
           />
         ))}
-      </div>
-
-      {leads.length > 1 ? (
-        <div className="flex justify-center gap-2">
-          {leads.map((item, index) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => goTo(index)}
-              aria-label={`${index + 1}번째 기사`}
-              aria-current={index === active}
-              className={`h-1.5 rounded-full transition-all ${
-                index === active ? "w-6 bg-accent" : "w-1.5 bg-line"
-              }`}
-            />
-          ))}
-        </div>
-      ) : null}
+      </SnapCarousel>
 
       <a
         href={hrefFor("news", date)}

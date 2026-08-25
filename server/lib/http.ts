@@ -25,7 +25,12 @@ export function corsHeaders(origin: string | null): Record<string, string> {
 
   return {
     "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    /*
+      실제로 쓰는 메서드를 전부 적는다. 빠뜨리면 브라우저가 프리플라이트에서
+      막아 요청을 아예 보내지 않는다 — 서버 로그에도 안 남아서 "버튼이 안 먹는다"
+      로만 보인다. DELETE(캘린더 빼기)가 그렇게 죽어 있었다.
+    */
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Authorization, Content-Type",
     "Access-Control-Max-Age": "86400",
     // 오리진마다 응답이 다르므로 캐시가 섞이지 않게 한다.

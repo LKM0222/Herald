@@ -26,7 +26,24 @@ type Stored = {
   /** 암호화된 publishedKey */
   key: string;
   addedAt: string;
+  /**
+   * 조회에 쓸지 여부. **선택형인 게 핵심이다** — 이 필드가 생기기 전에
+   * 저장된 파일엔 없다. 없는 것을 꺼진 것으로 읽으면 업데이트한 순간
+   * 이미 붙여둔 캘린더가 통째로 사라진 것처럼 보인다.
+   */
+  enabled?: boolean;
+  /**
+   * 네이버가 준 캘린더 색(# 없는 6자리). enabled 와 같은 이유로 선택형이다 —
+   * 이 필드가 생기기 전에 붙여둔 캘린더엔 없다. 없으면 화면이 기본 색으로
+   * 그린다. 색 하나 때문에 다시 등록하게 만들 이유가 없다.
+   */
+  color?: string;
 }[];
+
+/** 필드가 없던 시절의 항목은 켜진 것으로 읽는다. 위 주석의 이유. */
+function isEnabled(entry: Stored[number]): boolean {
+  return entry.enabled !== false;
+}
 
 function read(): Stored {
   try {
@@ -43,20 +60,28 @@ function write(next: Stored): void {
   writeFileSync(FILE, JSON.stringify(next, null, 2), { mode: 0o600 });
 }
 
-/** 화면에 보여줄 목록. 키는 빠진다. */
+/** 화면에 보여줄 목록. 키는 빠진다. 꺼둔 것도 체크박스로 보여야 하니 다 준다. */
 export function list(): CalendarSubscription[] {
-  return read().map(({ id, label, owner, addedAt }) => ({
-    id,
-    label,
-    owner,
-    addedAt,
+  return read().map((entry) => ({
+    id: entry.id,
+    label: entry.label,
+    owner: entry.owner,
+    addedAt: entry.addedAt,
+    enabled: isEnabled(entry),
+    ...(entry.color ? { color: entry.color } : {}),
   }));
 }
 
-/** 조회할 때 쓸 목록. 서버 안에서만 돈다. */
+/** 등록된 개수. 꺼둔 것도 센다 — "안 붙였다" 와 "다 꺼뒀다" 를 가르는 데 쓴다. */
+export function registeredCount(): number {
+  return read().length;
+}
+
+/** 조회할 때 쓸 목록. 서버 안에서만 돈다. 꺼둔 캘린더는 여기서 빠진다. */
 export function usable(): { id: string; label: string; key: string }[] {
   const out: { id: string; label: string; key: string }[] = [];
   for (const entry of read()) {
+    if (!isEnabled(entry)) continue;
     const key = decrypt(entry.key);
     // 복호화 실패 = ENCRYPTION_KEY 가 바뀌었다. 조용히 건너뛰지 않고 남긴다.
     if (key) out.push({ id: entry.id, label: entry.label, key });
@@ -73,6 +98,7 @@ export function add(input: {
   key: string;
   label: string;
   owner: string;
+  color?: string;
 }): AddResult {
   // 키가 없으면 저장하지 않는다. 평문으로 떨어뜨리느니 거부한다.
   if (!hasEncryptionKey()) return { ok: false, error: "no_encryption_key" };
@@ -89,7 +115,26 @@ export function add(input: {
     owner: input.owner,
     key: encrypt(input.key),
     addedAt: new Date().toISOString(),
+    // 방금 붙인 것을 꺼진 채로 두면 "붙였는데 일정이 안 온다" 가 된다.
+    enabled: true,
+    ...(input.color ? { color: input.color } : {}),
   });
+  write(current);
+  return { ok: true, subscriptions: list() };
+}
+
+export type ToggleResult =
+  | { ok: true; subscriptions: CalendarSubscription[] }
+  | { ok: false; error: "not_found" };
+
+/** 체크박스. 키는 건드리지 않으니 ENCRYPTION_KEY 가 없어도 껐다 켤 수 있다. */
+export function setEnabled(id: string, enabled: boolean): ToggleResult {
+  const current = read();
+  const target = current.find((entry) => entry.id === id);
+  // 없는 id 를 조용히 넘기면 화면은 꺼졌다고 믿고 서버는 그대로 켜져 있다.
+  if (!target) return { ok: false, error: "not_found" };
+
+  target.enabled = enabled;
   write(current);
   return { ok: true, subscriptions: list() };
 }

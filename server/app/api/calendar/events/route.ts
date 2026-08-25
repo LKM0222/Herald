@@ -1,7 +1,7 @@
 import { isISODate } from "@shared/date";
 import type { CalendarEvent } from "@shared/types";
 import { isAuthorized, json, preflight, unauthorized } from "@/lib/http";
-import { usable } from "@/lib/calendar/subscriptions";
+import { registeredCount, usable } from "@/lib/calendar/subscriptions";
 import { fetchEvents, NaverPublicError } from "@/lib/calendar/naver-public";
 
 /**
@@ -36,9 +36,24 @@ export async function GET(request: Request) {
 
   const calendars = usable();
   if (calendars.length === 0) {
-    // 오류가 아니다. 아직 아무것도 안 붙인 상태다.
+    /*
+      둘 다 일정이 0건이지만 사용자가 할 일이 정반대다.
+
+      - 등록이 아예 없다  → 붙이러 가야 한다 (configured: false)
+      - 붙였는데 다 꺼뒀다 → 켜러 가야 한다 (paused: true)
+
+      후자를 "아직 연결 전" 으로 뭉뚱그리면 화면이 거짓말을 한다 —
+      연결은 돼 있고 본인이 꺼둔 것뿐이다.
+    */
+    const registered = registeredCount();
     return json(
-      { configured: false, calendars: [], events: [], failed: [] },
+      {
+        configured: registered > 0,
+        paused: registered > 0,
+        calendars: [],
+        events: [],
+        failed: [],
+      },
       { origin },
     );
   }
@@ -79,6 +94,7 @@ export async function GET(request: Request) {
   return json(
     {
       configured: true,
+      paused: false,
       // 그 기간에 일정이 없는 캘린더도 붙어 있긴 하다. events 에서 이름을
       // 긁어모으면 조용한 캘린더가 "연결 안 됨" 으로 보인다.
       calendars: calendars.map((calendar) => calendar.label),

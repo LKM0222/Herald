@@ -28,6 +28,11 @@ export type NewsItem = {
   topic?: string;
   /** 없으면 3으로 취급한다 */
   priority?: Priority;
+  /**
+   * 피드가 제 손으로 실어 보낸 소개글. 요약이 아니라 **요약에 넣을 재료**다.
+   * 수집 단계에서 채워지고 길이를 잘라 담는다 — 글 전문을 보내는 피드가 있다.
+   */
+  excerpt?: string;
   /** 같은 사건을 보도한 다른 기사들. 중복을 지우지 않고 묶어서 보여준다 */
   alsoIn?: { source: string; url: string }[];
 };
@@ -67,6 +72,21 @@ export type CalendarEvent = UpcomingItem & {
   place?: string;
   /** 어느 캘린더에서 왔나. 여러 개를 붙이면 섞이기 때문에 남긴다 */
   calendar?: string;
+
+  /*
+    ── 여러 날에 걸친 일정에만 붙는다 ────────────────────────────
+    서버는 걸친 날마다 한 건씩 펴서 준다. 그래야 "그날 뭐 있나" 를 묻는
+    쪽이 단순해진다. 대신 달력이 띠 하나로 이어 그리려면 흩어진 날들이
+    한 일정이라는 걸 알아야 해서, 그 최소한만 함께 싣는다.
+    하루짜리에는 셋 다 없다.
+  */
+
+  /** 같은 일정에서 나온 날들을 묶는 값 */
+  spanId?: string;
+  /** 일정이 실제로 시작하는 날 (YYYY-MM-DD) */
+  spanStart?: string;
+  /** 일정이 실제로 끝나는 날 (YYYY-MM-DD) */
+  spanEnd?: string;
 };
 
 /**
@@ -80,6 +100,17 @@ export type CalendarSubscription = {
   /** 소유 계정 아이디. 어느 계정 것인지 구분용 */
   owner: string;
   addedAt: string;
+  /**
+   * 조회에 쓸지 여부. 끄는 것은 **빼는 것과 다르다** —
+   * 주소를 지우지 않으니 다시 켜면 그대로 돌아온다.
+   */
+  enabled: boolean;
+  /**
+   * 캘린더가 들고 온 색(# 없는 6자리). 우리가 고른 값이 아니라 네이버에서
+   * 온 데이터다. 이 필드가 생기기 전에 붙여둔 캘린더엔 없어서 선택형이고,
+   * 없으면 화면이 기본 색으로 그린다.
+   */
+  color?: string;
 };
 
 export type ContinueItem = {

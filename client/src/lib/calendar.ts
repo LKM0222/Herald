@@ -97,7 +97,19 @@ export function shiftMonthKeepingDay(date: string, delta: number): string {
   return `${there.year}-${String(there.month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-export type DayEvent = ScheduleItem & { date: string };
+/**
+ * 달력 한 칸에 앉는 일정.
+ *
+ * span* 는 여러 날에 걸친 일정에만 붙는다(서버가 날마다 한 건씩 펴서 주고,
+ * 그 날들을 도로 한 줄로 묶는 근거가 이 셋이다). 브리핑에서 온 일정에는
+ * 없어서 전부 선택형이다.
+ */
+export type DayEvent = ScheduleItem & {
+  date: string;
+  spanId?: string;
+  spanStart?: string;
+  spanEnd?: string;
+};
 
 /**
  * 날짜 → 그날 일정.

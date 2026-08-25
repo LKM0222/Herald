@@ -290,6 +290,27 @@ export async function addSubscription(
   return { kind: "ok", subscriptions: body.subscriptions };
 }
 
+/**
+ * 체크박스. 끄는 것은 빼는 것과 달라서 주소가 서버에 남고, 다시 켜면 그대로 돌아온다.
+ * DELETE 가 아니라 POST 를 쓰는 이유는 서버가 알리는 허용 메서드가
+ * GET·POST·OPTIONS 뿐이기 때문이다.
+ */
+export async function toggleSubscription(
+  config: Config,
+  id: string,
+  enabled: boolean,
+): Promise<SubscriptionsResult> {
+  const response = await request(config, "/api/calendar/subscriptions", {
+    method: "POST",
+    body: JSON.stringify({ id, enabled }),
+  });
+  if (isFailure(response)) return response;
+  const body = (await response.json()) as {
+    subscriptions: CalendarSubscription[];
+  };
+  return { kind: "ok", subscriptions: body.subscriptions, canStore: true };
+}
+
 export async function removeSubscription(
   config: Config,
   id: string,
@@ -316,6 +337,8 @@ export type CalendarFailure = {
 export type CalendarEventsResult = Result<{
   /** 등록된 캘린더가 하나라도 있는지. 없으면 빈 화면의 이유가 다르다 */
   configured: boolean;
+  /** 붙여는 뒀는데 체크를 다 꺼둔 상태. "연결 전" 과 구분해야 한다 */
+  paused: boolean;
   /** 붙어 있는 캘린더 이름들. 그 기간에 일정이 없는 것도 들어 있다 */
   calendars: string[];
   events: CalendarEvent[];
@@ -334,6 +357,7 @@ export async function fetchCalendarEvents(
   if (isFailure(response)) return response;
   const body = (await response.json()) as {
     configured: boolean;
+    paused?: boolean;
     calendars: string[];
     events: CalendarEvent[];
     failed: CalendarFailure[];
@@ -341,6 +365,8 @@ export async function fetchCalendarEvents(
   return {
     kind: "ok",
     configured: body.configured,
+    // 서버가 아직 이 필드를 안 보내는 버전일 수 있다. 없으면 안 꺼둔 것으로 읽는다.
+    paused: body.paused ?? false,
     calendars: body.calendars,
     events: body.events,
     failed: body.failed,

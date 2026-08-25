@@ -1,8 +1,12 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { formatKoreanDate, shiftISO } from "@shared/date";
-import type { Briefing } from "@shared/types";
+import type {
+  Briefing,
+  CalendarSubscription,
+  UpcomingItem,
+} from "@shared/types";
+import { fetchSubscriptions, toggleSubscription } from "../lib/api";
 import {
-  CalendarCheck,
   CalendarX,
   ChevronLeft,
   ChevronRight,
@@ -85,8 +89,41 @@ export function ScheduleView({
    * 다른 하나는 이번 주와 다음 7일 — 이건 달을 넘겨도 늘 오늘 기준이라
    * 보이는 달과 같이 움직이면 안 된다.
    */
-  const feed = useCalendarFeed(config, grid[0].date, grid[grid.length - 1].date);
-  const soon = useCalendarFeed(config, weekStart(today), shiftISO(today, 7));
+  /**
+   * 스트립에서 캘린더를 껐다 켜면 기간도 config 도 그대로라 훅이 안 돈다.
+   * 이 숫자를 올려서 그때만 두 벌 다 다시 받아온다 — 한쪽만 갱신하면
+   * 달력과 "이번 주" 숫자가 서로 다른 말을 한다.
+   */
+  const [reloadKey, setReloadKey] = useState(0);
+  const [subscriptions, setSubscriptions] = useState<
+    CalendarSubscription[] | null
+  >(null);
+  const [toggling, setToggling] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchSubscriptions(config).then((result) => {
+      if (!cancelled && result.kind === "ok") {
+        setSubscriptions(result.subscriptions);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [config]);
+
+  const feed = useCalendarFeed(
+    config,
+    grid[0].date,
+    grid[grid.length - 1].date,
+    reloadKey,
+  );
+  const soon = useCalendarFeed(
+    config,
+    weekStart(today),
+    shiftISO(today, 7),
+    reloadKey,
+  );
 
   const live = feed.state === "live";
   const events = live
@@ -96,10 +133,11 @@ export function ScheduleView({
       : new Map<string, DayEvent[]>();
   const picked = events.get(anchor) ?? [];
 
-  const upcoming =
+  const upcoming = oncePerSpan(
     soon.state === "live"
       ? soon.events.filter((item) => item.date > today)
-      : (briefing?.upcoming ?? []);
+      : (briefing?.upcoming ?? []),
+  );
 
   return (
     // lg:min-h-0 — Home.tsx 와 같은 이유. 본문·스트립을 AppShell <main> 의
@@ -110,18 +148,16 @@ export function ScheduleView({
         className={`flex min-w-0 flex-1 flex-col gap-6 ${SCROLL_PANE}`}
       >
         {/*
-          좁은 화면에선 조작부를 제목 아래로 내린다. 한 줄에 같이 두면 제목이
-          네 줄로 눌린다 — 320px 에서 버튼 셋이 130px 을 가져간다.
+          큰 제목을 걷어냈다. 달력 자체가 무슨 화면인지 말하고 있어서,
+          위에 "이번 달은 몇 건이에요" 를 크게 얹으면 격자와 눈싸움만 한다 —
+          같은 숫자는 오른쪽 "이번 주" 칸이 이미 세고 있다.
+
+          좁은 화면에선 조작부를 라벨 아래로 내린다. 한 줄에 같이 두면
+          320px 에서 버튼 셋이 130px 을 가져가 라벨이 눌린다.
         */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
           <div className="flex min-w-0 flex-col gap-1.5">
             <Kicker>{rangeLabel(range, anchor)}</Kicker>
-            {/* break-keep — 안 주면 좁은 화면에서 "몰 / 려 있죠" 처럼 낱말이 쪼개진다 */}
-            <h2 className="max-w-[32ch] break-keep font-display text-2xl leading-tight sm:text-[27px]">
-              {feed.state === "loading"
-                ? "일정을 가져오는 중이에요."
-                : headline(range, anchor, today, cells, events)}
-            </h2>
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5">
@@ -200,11 +236,43 @@ export function ScheduleView({
         className={`flex shrink-0 flex-col gap-7 border-line lg:w-56 lg:border-l lg:pl-6 ${SCROLL_PANE}`}
       >
         <WeekStats briefing={briefing} today={today} soon={soon} />
-        <ConnectedCalendars feed={feed} />
+        <ConnectedCalendars
+          feed={feed}
+          subscriptions={subscriptions}
+          busy={toggling}
+          onToggle={(item) => void toggleCalendar(item)}
+        />
         <RangePicker value={range} onChange={setRange} />
       </aside>
     </div>
   );
+
+  /**
+   * 스트립의 체크박스. 설정 화면의 것과 같은 값을 토글한다.
+   *
+   * 먼저 화면에 반영하고 실패하면 되돌린다 — 여기선 되돌리는 값이 싸다.
+   * 성공하면 reloadKey 를 올려 달력을 다시 받아온다. 안 올리면 체크만
+   * 움직이고 일정은 그대로라 "안 먹혔다" 로 보인다.
+   */
+  async function toggleCalendar(item: CalendarSubscription) {
+    if (!subscriptions) return;
+    const before = subscriptions;
+    setSubscriptions(
+      subscriptions.map((entry) =>
+        entry.id === item.id ? { ...entry, enabled: !entry.enabled } : entry,
+      ),
+    );
+    setToggling(true);
+    const result = await toggleSubscription(config, item.id, !item.enabled);
+    setToggling(false);
+
+    if (result.kind === "ok") {
+      setSubscriptions(result.subscriptions);
+      setReloadKey((key) => key + 1);
+      return;
+    }
+    setSubscriptions(before); // 되돌린다
+  }
 
   /** 화살표는 지금 보고 있는 단위만큼 움직인다. */
   function step(delta: number) {
@@ -299,8 +367,187 @@ function Grid({
           </span>
         ))}
       </div>
+      {/* 주 단위로 끊어 그린다. 띠가 한 주 안에서만 이어지기 때문이다 */}
+      <div className="flex flex-col gap-1 sm:gap-2">
+        {layoutBands(cells, events).map(({ row, bands }) => (
+          <WeekRow
+            key={row[0].date}
+            row={row}
+            bands={bands}
+            events={events}
+            today={today}
+            anchor={anchor}
+            onPick={onPick}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 여러 날 일정은 목록에 한 번만 올린다.
+ *
+ * 서버가 날마다 한 건씩 주기 때문에 "다음 7일" 에 2주짜리 일정이 들어오면
+ * 같은 줄이 일곱 번 반복된다 — 목록이 그 일정 하나로 다 찬다.
+ * 격자에서 띠로 묶은 것과 같은 이유이고, 남기는 건 제일 이른 날 하나다.
+ */
+function oncePerSpan<T extends UpcomingItem & { spanId?: string }>(
+  items: T[],
+): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (!item.spanId) return true;
+    if (seen.has(item.spanId)) return false;
+    seen.add(item.spanId);
+    return true;
+  });
+}
+
+/** 42칸(또는 7칸)을 주 단위로 자른다. */
+function weekRows(cells: MonthCell[]): MonthCell[][] {
+  const rows: MonthCell[][] = [];
+  for (let at = 0; at < cells.length; at += 7) rows.push(cells.slice(at, at + 7));
+  return rows;
+}
+
+/** 격자 위에 얹는 여러 날 일정 띠 한 조각. */
+type Band = {
+  key: string;
+  label: string;
+  /** 0=일요일 */
+  startCol: number;
+  span: number;
+  /** 이 조각의 왼쪽이 일정의 진짜 시작인가 */
+  capStart: boolean;
+  /** 오른쪽이 진짜 끝인가 */
+  capEnd: boolean;
+  /** 몇 번째 층에 앉을지. 겹치는 띠를 위아래로 쌓는다 */
+  lane: number;
+};
+
+const LANE_HEIGHT = 20;
+const LANE_GAP = 4;
+
+/**
+ * 이 주에 걸쳐 있는 띠들.
+ *
+ * 같은 일정이 여러 칸에 흩어져 있는 걸 spanId 로 도로 묶어서,
+ * 이 주에서 처음 나온 칸부터 마지막 칸까지 한 조각으로 만든다.
+ *
+ * 모서리가 곧 "이어짐" 표시다 — 진짜 시작·끝인 쪽만 둥글게 막고
+ * 주 경계에서 잘린 쪽은 평평하게 둬서 다음 줄로 이어지는 것처럼 보이게 한다.
+ * 그래서 조회 창 밖에서 시작한 일정도 따로 처리할 게 없다: 시작이 안 보이면
+ * capStart 가 false 라 저절로 평평해지고 라벨이 "계속" 이 된다.
+ */
+/**
+ * 격자 전체의 띠를 위에서부터 배치한다.
+ *
+ * 제목을 어느 조각에 쓸지는 한 주만 봐서는 정할 수 없어서 여기서 정한다 —
+ * 아래 주석(labelled) 참고.
+ */
+function layoutBands(
+  cells: MonthCell[],
+  events: Map<string, DayEvent[]>,
+): { row: MonthCell[]; bands: Band[] }[] {
+  /*
+   * 이 격자에서 제목을 이미 쓴 일정들.
+   *
+   * 도면은 "첫 조각에만 제목" 이라고 하는데, 도면엔 일정이 창 안에서
+   * 시작하는 경우만 그려져 있다. 시작일이 창 밖인 달(8/25 시작인 일정을
+   * 9월에서 보는 경우)에 그 규칙을 곧이곧대로 쓰면 제목이 **한 번도**
+   * 안 나오고 "계속" 짜리 띠만 남는다 — 무슨 일정인지 알 수가 없다.
+   *
+   * 그래서 "진짜 시작" 이 아니라 "이 격자에서 처음 보이는 조각" 에 제목을
+   * 쓴다. 창 안에서 시작하는 일정은 둘이 같은 조각이라 도면과 결과가
+   * 똑같고, 창 밖에서 시작한 일정만 제목을 얻는다. 이전부터 이어져 왔다는
+   * 사실은 도면대로 **평평한 왼쪽 모서리**가 말한다.
+   */
+  const labelled = new Set<string>();
+  return weekRows(cells).map((row) => ({
+    row,
+    bands: bandsFor(row, events, labelled),
+  }));
+}
+
+function bandsFor(
+  row: MonthCell[],
+  events: Map<string, DayEvent[]>,
+  labelled: Set<string>,
+): Band[] {
+  const found = new Map<
+    string,
+    { first: number; last: number; event: DayEvent }
+  >();
+
+  row.forEach((cell, col) => {
+    for (const event of events.get(cell.date) ?? []) {
+      if (!event.spanId) continue;
+      const seen = found.get(event.spanId);
+      if (seen) seen.last = col;
+      else found.set(event.spanId, { first: col, last: col, event });
+    }
+  });
+
+  const bands = [...found.entries()]
+    .map(([key, { first, last, event }]) => {
+      // 이 격자에서 처음 보이는 조각에만 제목을 쓴다. 이어지는 조각까지
+      // 제목을 반복하면 원래 문제(칸마다 같은 제목)가 그대로 돌아온다.
+      const label = labelled.has(key) ? "계속" : event.title;
+      labelled.add(key);
+      return {
+        key,
+        label,
+        startCol: first,
+        span: last - first + 1,
+        // 모서리는 라벨과 따로 논다 — 이건 실제 시작·끝만 둥글게 막는다.
+        capStart: event.spanStart === row[first].date,
+        capEnd: event.spanEnd === row[last].date,
+        lane: 0,
+      };
+    })
+    // 왼쪽부터, 같은 자리면 긴 것부터 쌓아야 층이 덜 지저분하다.
+    .sort((a, b) => a.startCol - b.startCol || b.span - a.span);
+
+  // 겹치지 않는 띠끼리는 같은 층을 쓴다.
+  const lanes: Band[][] = [];
+  for (const band of bands) {
+    const end = band.startCol + band.span - 1;
+    let index = lanes.findIndex((lane) =>
+      lane.every((other) => {
+        const otherEnd = other.startCol + other.span - 1;
+        return band.startCol > otherEnd || end < other.startCol;
+      }),
+    );
+    if (index === -1) index = lanes.push([]) - 1;
+    lanes[index].push(band);
+    band.lane = index;
+  }
+
+  return bands;
+}
+
+function WeekRow({
+  row,
+  bands,
+  events,
+  today,
+  anchor,
+  onPick,
+}: {
+  row: MonthCell[];
+  bands: Band[];
+  events: Map<string, DayEvent[]>;
+  today: string;
+  anchor: string;
+  onPick: (date: string) => void;
+}) {
+  const laneCount = bands.reduce((most, band) => Math.max(most, band.lane + 1), 0);
+
+  return (
+    <div className="relative">
       <div className="grid grid-cols-7 gap-1 sm:gap-2">
-        {cells.map((cell) => (
+        {row.map((cell) => (
           <DayCell
             key={cell.date}
             cell={cell}
@@ -308,9 +555,45 @@ function Grid({
             isToday={cell.date === today}
             isPicked={cell.date === anchor}
             onPick={onPick}
+            laneCount={laneCount}
           />
         ))}
       </div>
+
+      {/*
+        띠는 칸 위에 얹는다 — 칸 하나에 넣으면 이웃 칸으로 넘어갈 수 없다.
+        칸 격자와 열·간격이 똑같아야 경계가 맞고, pointer-events-none 이라야
+        띠를 눌러도 그 아래 날짜가 눌린다.
+        sm 미만에선 안 그린다: 좁은 화면은 칩 대신 점만 찍는 화면이라
+        띠를 얹을 자리가 없다.
+      */}
+      {laneCount > 0 ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 hidden grid-cols-7 content-start gap-x-2 gap-y-1 pt-8 sm:grid"
+        >
+          {bands.map((band) => (
+            <span
+              key={band.key}
+              style={{
+                gridColumn: `${band.startCol + 1} / span ${band.span}`,
+                gridRow: band.lane + 1,
+              }}
+              className={`flex h-5 items-center overflow-hidden text-[11px] leading-none whitespace-nowrap bg-accent text-bg ${
+                band.capStart
+                  ? "ml-[9px] rounded-l-full pl-[9px]"
+                  : "rounded-l-none pl-[6px]"
+              } ${
+                band.capEnd
+                  ? "mr-[9px] rounded-r-full pr-[9px]"
+                  : "rounded-r-none pr-[6px]"
+              }`}
+            >
+              <span className="truncate">{band.label}</span>
+            </span>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -327,13 +610,22 @@ function DayCell({
   isToday,
   isPicked,
   onPick,
+  laneCount,
 }: {
   cell: MonthCell;
   events: DayEvent[];
   isToday: boolean;
   isPicked: boolean;
   onPick: (date: string) => void;
+  /** 이 주에 깔린 띠의 층 수. 0이면 자리를 비우지 않는다 */
+  laneCount: number;
 }) {
+  /*
+    여러 날 일정은 칩으로 안 그린다 — 위에 띠가 지나간다.
+    점(좁은 화면)과 aria-label 은 events 를 그대로 쓴다: 띠를 안 그리는
+    화면에서도 그날 일정이 있다는 사실 자체는 같기 때문이다.
+  */
+  const chips = events.filter((event) => !event.spanId);
   // 고른 날은 테두리로, 오늘은 바탕으로 표시한다. 둘이 같은 날이어도 겹치지 않는다.
   const edge = isPicked
     ? "border-accent ring-1 ring-accent"
@@ -365,6 +657,21 @@ function DayCell({
         {cell.day}
       </span>
 
+      {/*
+        띠가 지나갈 자리를 비운다. 이 칸에 띠가 안 걸쳐도 같은 높이를 비워야
+        한 줄의 일곱 칸이 같은 자리에서 칩을 시작한다 — 안 그러면 띠 아래
+        칩들이 칸마다 들쭉날쭉해진다.
+      */}
+      {laneCount > 0 ? (
+        <span
+          aria-hidden="true"
+          style={{
+            height: laneCount * LANE_HEIGHT + (laneCount - 1) * LANE_GAP,
+          }}
+          className="hidden shrink-0 sm:block"
+        />
+      ) : null}
+
       {/* 좁은 화면 — 점으로 개수만 */}
       <span className="flex gap-0.5 sm:hidden">
         {events.slice(0, 3).map((event) => (
@@ -377,7 +684,7 @@ function DayCell({
 
       {/* 넓은 화면 — 도면대로 칩 */}
       <span className="hidden min-w-0 flex-col gap-1 sm:flex">
-        {events.map((event) => (
+        {chips.map((event) => (
           <span
             key={event.id}
             className={`truncate rounded-md px-1.5 py-0.5 text-[11px] leading-[1.35] ${
@@ -453,49 +760,6 @@ function rangeLabel(range: Range, anchor: string): string {
       ? `${Number(to.slice(8, 10))}일`
       : shortDate(to);
   return `${shortDate(from)} – ${tail}`;
-}
-
-/** 도면의 "이번 달은 네 건이에요. 오늘 두 건이 몰려 있죠." 자리. */
-function headline(
-  range: Range,
-  anchor: string,
-  today: string,
-  cells: MonthCell[],
-  events: Map<string, DayEvent[]>,
-): string {
-  if (range === "day") {
-    const count = events.get(anchor)?.length ?? 0;
-    const subject = anchor === today ? "오늘은" : "이 날은";
-    return count === 0 ? `${subject} 비어 있어요.` : `${subject} ${count}건이에요.`;
-  }
-
-  if (range === "week") {
-    const total = countIn(cells, events, false);
-    const subject = cells.some((cell) => cell.date === today) ? "이번 주는" : "이 주는";
-    return total === 0 ? `${subject} 비어 있어요.` : `${subject} ${total}건이에요.`;
-  }
-
-  const total = countIn(cells, events, true);
-  if (!anchor.startsWith(today.slice(0, 7))) {
-    return total === 0 ? "이 달은 아직 아무것도 없어요." : `이 달은 ${total}건이에요.`;
-  }
-  if (total === 0) return "이번 달은 아직 비어 있어요.";
-
-  const todayCount = events.get(today)?.length ?? 0;
-  return todayCount === 0
-    ? `이번 달은 ${total}건이에요. 오늘은 비어 있죠.`
-    : `이번 달은 ${total}건이에요. 오늘 ${todayCount}건이 몰려 있죠.`;
-}
-
-/** 격자에 실제로 걸린 일정 수. 월간에선 앞뒤로 채운 날을 빼고 센다. */
-function countIn(
-  cells: MonthCell[],
-  events: Map<string, DayEvent[]>,
-  onlyInMonth: boolean,
-): number {
-  return cells
-    .filter((cell) => !onlyInMonth || cell.inMonth)
-    .reduce((sum, cell) => sum + (events.get(cell.date)?.length ?? 0), 0);
 }
 
 /**
@@ -578,26 +842,85 @@ function countWeek(
  *
  * 붙기 전에는 달력에 오늘과 다음 7일만 들어오는데, 그 사실을 적어두지 않으면
  * 비어 있는 달을 "연동됐는데 한가한 달" 로 읽는다.
+ *
+ * 체크를 다 꺼둔 상태(paused)를 따로 적는 이유도 같다. 붙어 있는데
+ * "아직 연결 전" 이라고 하면 거짓말이고, 설정에서 할 일도 정반대다 —
+ * 붙이러 가는 게 아니라 켜러 간다.
  */
-function ConnectedCalendars({ feed }: { feed: Feed }) {
+function ConnectedCalendars({
+  feed,
+  subscriptions,
+  busy,
+  onToggle,
+}: {
+  feed: Feed;
+  subscriptions: CalendarSubscription[] | null;
+  busy: boolean;
+  onToggle: (item: CalendarSubscription) => void;
+}) {
+  const registered = subscriptions ?? [];
+  const allOff = registered.length > 0 && registered.every((s) => !s.enabled);
+
   return (
     <section className="flex flex-col gap-2.5">
       <Kicker>연결된 캘린더</Kicker>
       <div className="flex flex-col items-start gap-2 rounded-xl border border-line px-4 py-3.5">
-        {feed.state === "live" && feed.calendars.length > 0 ? (
+        {registered.length > 0 ? (
           <>
-            <span className="flex items-center gap-2 text-sm">
-              <CalendarCheck size={16} strokeWidth={1.5} className="text-accent" />
-              네이버 캘린더
-            </span>
-            <ul className="flex flex-col gap-1">
-              {feed.calendars.map((name) => (
-                <li key={name} className="text-xs break-keep text-dim">
-                  · {name}
+            {/*
+              ⚠ 다 꺼져도 이 목록은 남아야 한다. 목록을 숨기면 마지막 하나를
+                끈 사람이 여기서 다시 켤 방법을 잃는다.
+            */}
+            <ul className="flex w-full flex-col">
+              {registered.map((item) => (
+                <li key={item.id}>
+                  <label className="flex min-h-11 cursor-pointer items-center gap-2.5">
+                    <input
+                      type="checkbox"
+                      checked={item.enabled}
+                      onChange={() => onToggle(item)}
+                      disabled={busy}
+                      className="size-4 shrink-0 accent-[var(--accent)]"
+                    />
+                    {/*
+                      색은 캘린더가 들고 온 값이라 토큰이 아니라 style 로 간다.
+                      없을 수도 있어서(색이 생기기 전에 붙인 것) 그때는
+                      역할 토큰으로 떨어진다. 옅은 색이 밝은 바탕에서 사라지지
+                      않도록 테두리를 한 겹 두른다.
+                    */}
+                    <span
+                      aria-hidden="true"
+                      style={
+                        item.color ? { background: `#${item.color}` } : undefined
+                      }
+                      className={`size-2.5 shrink-0 rounded-full border border-line ${
+                        item.color ? "" : "bg-accent"
+                      } ${item.enabled ? "" : "opacity-40"}`}
+                    />
+                    <span
+                      className={`min-w-0 flex-1 truncate text-xs break-keep ${
+                        item.enabled ? "" : "text-dim"
+                      }`}
+                    >
+                      {item.label}
+                    </span>
+                  </label>
                 </li>
               ))}
             </ul>
-            <Tag tone="accent">연결됨</Tag>
+
+            {allOff ? (
+              <>
+                <Tag>모두 꺼져 있어요</Tag>
+                <p className="text-xs leading-relaxed break-keep text-dim">
+                  붙여둔 캘린더는 그대로 있어요. 체크를 켜면 다시 채워집니다.
+                </p>
+              </>
+            ) : (
+              <p className="text-xs leading-relaxed break-keep text-dim">
+                체크한 캘린더만 불러와요
+              </p>
+            )}
           </>
         ) : (
           <>
@@ -606,7 +929,9 @@ function ConnectedCalendars({ feed }: { feed: Feed }) {
               네이버 캘린더
             </span>
             <Tag>
-              {feed.state === "loading" ? "확인하는 중이에요" : "아직 연결 전이에요"}
+              {subscriptions === null || feed.state === "loading"
+                ? "확인하는 중이에요"
+                : "아직 연결 전이에요"}
             </Tag>
             <p className="text-xs leading-relaxed break-keep text-dim">
               연결 전이라 달력에는 오늘과 다음 7일만 채워져요.
@@ -617,7 +942,7 @@ function ConnectedCalendars({ feed }: { feed: Feed }) {
           href={`${hrefFor("settings")}#calendar`}
           className="text-[13px] text-accent hover:underline"
         >
-          설정에서 {feed.state === "live" ? "관리하기" : "연결하기"} →
+          설정에서 {registered.length > 0 ? "연결 관리" : "연결하기"} →
         </a>
       </div>
     </section>

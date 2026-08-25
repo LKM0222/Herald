@@ -367,6 +367,10 @@ export type Probe = {
   reportRows: number;
   /** 첫 줄의 **키 이름과 타입만**. 값은 담지 않는다 — 진단이 일정 덤프가 되면 안 된다. */
   shape?: string[];
+  /** calendar-multiget 으로 본문을 받아왔는가 (앞의 몇 건만 시험) */
+  multiget?: number;
+  /** 리소스 URL 을 그냥 GET 했을 때. `상태/길이/VEVENT여부` */
+  plainGet?: string;
   error?: string;
 };
 
@@ -428,6 +432,39 @@ export async function probeCalendar(
     const rows = responsesOf(all);
     result.reportRows = rows.length;
     if (rows[0]) result.shape = describeShape(rows[0]);
+
+    // 네이버는 REPORT 에 200 을 주면서 prop 을 비워 보낸다. 본문을 받을 다른 길을 잰다.
+    const hrefs = rows
+      .map((row) => hrefOf(row.href))
+      .filter((href): href is string => Boolean(href))
+      .slice(0, 5);
+
+    if (hrefs.length > 0) {
+      const origin = originOf(credentials);
+      const multi = await dav(credentials, {
+        method: "REPORT",
+        url: calendar.url,
+        depth: "1",
+        body: `<?xml version="1.0" encoding="utf-8"?>
+<c:calendar-multiget xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:prop><c:calendar-data/></d:prop>
+${hrefs.map((href) => `  <d:href>${href}</d:href>`).join("\n")}
+</c:calendar-multiget>`,
+      });
+      result.multiget = responsesOf(multi).filter((row) => {
+        const data = textOf(propsOf(row)["calendar-data"]);
+        return Boolean(data && data.includes("BEGIN:VEVENT"));
+      }).length;
+
+      const direct = await fetch(absolute(hrefs[0], origin), {
+        headers: { Authorization: authHeader(credentials) },
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      const body = await direct.text();
+      result.plainGet = `${direct.status}/${body.length}자/${
+        body.includes("BEGIN:VEVENT") ? "VEVENT있음" : "VEVENT없음"
+      }`;
+    }
     result.withoutRange = rows.filter((response) => {
       const data = textOf(propsOf(response)["calendar-data"]);
       return Boolean(data && data.includes("BEGIN:VEVENT"));

@@ -335,6 +335,13 @@ function LeadCard({
   const extra = item.alsoIn?.length ?? 0;
 
   return (
+    /*
+       측정값(max-w)이 홈 카드와 다르다. 홈 카드는 644px 라 24ch(333px)가
+       절반을 쓰는데, 이 카드는 칸을 통째로 채워 928px 라 같은 24ch 가 36%
+       밖에 안 돼 오른쪽이 휑하게 빈다. 도면이 720px 틀로 그려져 있어 넓은
+       화면 몫이 정해져 있지 않았다 — 도면의 비율(약 60%)을 유지하도록 넓혔다.
+       읽기 좋은 길이는 지킨다: 제목 38ch, 본문 68ch 위로는 안 늘린다.
+    */
     <article className="flex w-full shrink-0 snap-start flex-col gap-3.5 rounded-2xl border border-line bg-surface p-5 sm:p-7">
       <div className="flex flex-wrap items-center gap-2.5">
         <Kicker tone="accent">
@@ -350,7 +357,7 @@ function LeadCard({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <h4 className="max-w-[24ch] font-display text-2xl leading-[1.18] break-keep sm:text-[31px]">
+        <h4 className="max-w-[38ch] font-display text-2xl leading-[1.18] break-keep sm:text-[31px]">
           {item.summary ?? item.title}
         </h4>
         {/* 요약이 없으면 위 제목이 이미 원제다. 같은 문장을 두 번 쓰지 않는다 */}
@@ -365,7 +372,7 @@ function LeadCard({
           요약 단계를 안 거친 기사가 실제로 그렇다. 그래서 있을 때만 그린다.
       */}
       {item.relevance ? (
-        <p className="max-w-[52ch] border-l-2 border-accent bg-accent-soft px-3.5 py-3 text-sm leading-relaxed text-accent-ink text-pretty sm:min-h-24">
+        <p className="max-w-[68ch] border-l-2 border-accent bg-accent-soft px-3.5 py-3 text-sm leading-relaxed text-accent-ink text-pretty sm:min-h-24">
           {item.relevance}
         </p>
       ) : null}

@@ -64,7 +64,11 @@ export default function App() {
   return (
     <AppShell view={view} dateLabel={formatKoreanDate(date)} date={date === today ? undefined : date}>
       {view === "settings" ? (
-        <Settings config={config} onReconnect={reconnect} />
+        <Settings
+          config={config}
+          onReconnect={reconnect}
+          onConfigChanged={() => setConfig(loadConfig())}
+        />
       ) : (
         <BriefingView
           view={view}

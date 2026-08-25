@@ -76,6 +76,19 @@ export function preflight(origin: string | null): NextResponse {
   return new NextResponse(null, { status: 204, headers: corsHeaders(origin) });
 }
 
+/**
+ * 저장 실패. 대개 원인은 하나다 — 데이터 볼륨이 앱 사용자(uid 1001)에게
+ * 쓰기 권한이 없다. 맨 500 으로 두면 화면에서 원인을 알 길이 없다.
+ */
+export function storageError(
+  origin: string | null,
+  error: unknown,
+): NextResponse {
+  const detail = error instanceof Error ? error.message : String(error);
+  console.error("[herald] 저장 실패:", detail);
+  return json({ error: "storage_unwritable", detail }, { status: 500, origin });
+}
+
 export function unauthorized(origin: string | null): NextResponse {
   return json({ error: "unauthorized" }, { status: 401, origin });
 }

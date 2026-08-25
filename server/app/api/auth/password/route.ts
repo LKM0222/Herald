@@ -1,5 +1,11 @@
-import { setPassword } from "@/lib/auth";
-import { isAuthorized, json, preflight, unauthorized } from "@/lib/http";
+import { issueToken, setPassword } from "@/lib/auth";
+import {
+  isAuthorized,
+  json,
+  preflight,
+  storageError,
+  unauthorized,
+} from "@/lib/http";
 
 /** 너무 짧으면 횟수 제한만으로는 못 버틴다. */
 const MIN_LENGTH = 8;
@@ -30,8 +36,15 @@ export async function POST(request: Request) {
     );
   }
 
-  setPassword(password);
-  return json({ ok: true }, { origin });
+  try {
+    setPassword(password);
+  } catch (error) {
+    return storageError(origin, error);
+  }
+
+  // 방금 비밀번호를 정한 기기도 세션 토큰으로 갈아탄다.
+  // 복구용 API_TOKEN 을 계속 들고 있을 이유가 없다.
+  return json({ ok: true, token: issueToken() }, { origin });
 }
 
 export async function OPTIONS(request: Request) {

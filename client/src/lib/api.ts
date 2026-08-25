@@ -36,7 +36,7 @@ async function request(
     });
     if (response.status === 401) return { kind: "unauthorized" };
     if (!response.ok) {
-      return { kind: "unreachable", message: `서버 응답 ${response.status}` };
+      return { kind: "unreachable", message: await describeError(response) };
     }
     return response;
   } catch (error) {
@@ -45,6 +45,24 @@ async function request(
       message: error instanceof Error ? error.message : "연결 실패",
     };
   }
+}
+
+/**
+ * 서버가 보낸 오류 코드를 사람 말로 바꾼다.
+ * "서버 응답 500" 만 보여주면 화면 앞에서 할 수 있는 게 없다.
+ */
+async function describeError(response: Response): Promise<string> {
+  let code = "";
+  try {
+    const body = (await response.json()) as { error?: string };
+    code = body.error ?? "";
+  } catch {
+    // 본문이 JSON 이 아니면 상태 코드만으로 말한다.
+  }
+  if (code === "storage_unwritable") {
+    return "서버가 저장에 실패했습니다. 데이터 폴더 권한을 확인해 주세요.";
+  }
+  return code ? `${code} (HTTP ${response.status})` : `서버 응답 ${response.status}`;
 }
 
 function isFailure(value: Response | Failure): value is Failure {
@@ -135,7 +153,7 @@ export async function login(
 }
 
 export type PasswordResult =
-  | { kind: "ok" }
+  | { kind: "ok"; token: string | null }
   | { kind: "too_short"; minLength: number }
   | Failure;
 
@@ -149,10 +167,11 @@ export async function setPassword(
   });
   if (isFailure(response)) {
     // 400(너무 짧음)은 request 가 unreachable 로 싸버리므로 여기서 되살린다.
-    if (response.kind === "unreachable" && response.message.includes("400")) {
+    if (response.kind === "unreachable" && response.message.includes("too_short")) {
       return { kind: "too_short", minLength: 8 };
     }
     return response;
   }
-  return { kind: "ok" };
+  const body = (await response.json()) as { token?: string };
+  return { kind: "ok", token: body.token ?? null };
 }

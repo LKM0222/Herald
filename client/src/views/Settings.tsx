@@ -7,19 +7,21 @@ import {
   setPassword,
   type Failure,
 } from "../lib/api";
-import type { Config } from "../lib/config";
+import { saveConfig, type Config } from "../lib/config";
 
 export function Settings({
   config,
   onReconnect,
+  onConfigChanged,
 }: {
   config: Config;
   onReconnect: () => void;
+  onConfigChanged: () => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
       <SourcesCard config={config} />
-      <PasswordCard config={config} />
+      <PasswordCard config={config} onConfigChanged={onConfigChanged} />
       <ConnectionCard config={config} onReconnect={onReconnect} />
     </div>
   );
@@ -109,7 +111,13 @@ function SourcesCard({ config }: { config: Config }) {
 }
 
 /** 비밀번호 설정·변경. 이걸 설정해야 다른 기기에서 긴 토큰 없이 들어온다. */
-function PasswordCard({ config }: { config: Config }) {
+function PasswordCard({
+  config,
+  onConfigChanged,
+}: {
+  config: Config;
+  onConfigChanged: () => void;
+}) {
   const [value, setValue] = useState("");
   const [confirm, setConfirm] = useState("");
   const [state, setState] = useState<
@@ -127,6 +135,11 @@ function PasswordCard({ config }: { config: Config }) {
     if (result.kind === "ok") {
       setValue("");
       setConfirm("");
+      // 서버가 새 세션 토큰을 함께 준다. 이 기기도 복구용 토큰을 놓고 갈아탄다.
+      if (result.token) {
+        saveConfig({ apiBase: config.apiBase, token: result.token });
+        onConfigChanged();
+      }
       setState({ kind: "done" });
     } else if (result.kind === "too_short") {
       setState({ kind: "error", message: `${result.minLength}자 이상이어야 합니다.` });
@@ -177,8 +190,8 @@ function PasswordCard({ config }: { config: Config }) {
         ) : null}
         {state.kind === "done" ? (
           <Notice tone="ok">
-            저장했습니다. 이 기기는 그대로 쓰시면 되고, 새 기기에서는 이
-            비밀번호로 연결하세요.
+            저장했습니다. 이제 폰이든 다른 PC 든 <b>같은 비밀번호</b>로 들어올 수
+            있습니다.
           </Notice>
         ) : null}
 

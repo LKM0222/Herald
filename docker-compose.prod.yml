@@ -6,6 +6,16 @@
 # 로컬과 다른 점 하나: 앱 포트를 인터넷에 열지 않는다.
 # 바깥으로 나가는 것은 Caddy 의 80 · 443 뿐이고, 앱은 도커 내부 네트워크에만 있다.
 services:
+  # ./data 는 도커가 만들면 root 소유가 된다. 앱은 uid 1001 로 돌기 때문에
+  # 그대로 두면 설정·비밀번호 저장이 조용히 500 으로 실패한다.
+  # 매번 뜨기 전에 소유권을 맞춘다 — 새 서버에 올릴 때도 손댈 필요가 없다.
+  init:
+    image: alpine:3
+    user: root
+    command: sh -c "mkdir -p /data && chown -R 1001:1001 /data"
+    volumes:
+      - ./data:/data
+
   web:
     build:
       context: .
@@ -19,6 +29,9 @@ services:
         required: false
     volumes:
       - ./data:/data
+    depends_on:
+      init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   caddy:

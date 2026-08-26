@@ -268,6 +268,25 @@ function SnapPanel({
 }
 
 /**
+ * 기사 점수 (summarize.ts 의 TIERS 가 이 값으로 층을 나눈다).
+ *
+ * 층이 이미 점수대를 말하지만 같은 층 안에서도 90 과 99 는 다르다.
+ * 숫자를 같이 두면 "왜 이게 위에 있나" 를 따로 묻지 않아도 된다.
+ * 요약 전 기사는 점수가 없다 — 그때는 자리를 차지하지 않는다.
+ */
+function Score({ value }: { value?: number }) {
+  if (value === undefined) return null;
+  return (
+    <span
+      className="shrink-0 font-display text-[13px] font-semibold text-accent tabular-nums"
+      title={`중요도 ${value}점`}
+    >
+      {value}
+    </span>
+  );
+}
+
+/**
  * 스크롤 영역 위에 붙박이로 서는 날짜 줄 (도면 5A).
  *
  * 무엇을 보고 있는지(날짜)와 오늘 몇 건인지(층별 건수)를 한 줄에 둔다.
@@ -456,30 +475,39 @@ function LeadCard({
 
       <div className="flex flex-col gap-1.5">
         <h4 className="font-display text-2xl leading-[1.18] break-keep sm:text-[31px]">
+          {/* 점수를 제목 안에 둔다 — 밖에 두면 제목이 두 줄일 때 따로 논다 */}
+          {item.score !== undefined ? (
+            <span className="mr-2.5 align-[0.15em] text-base font-semibold text-accent tabular-nums sm:text-lg">
+              {item.score}
+            </span>
+          ) : null}
           {item.headline ?? item.title}
         </h4>
         {/* 표제가 없으면 위가 이미 원제다. 같은 문장을 두 번 쓰지 않는다 */}
         {item.headline ? (
           <p className="text-xs leading-[1.4] text-dim">원제 · {item.title}</p>
         ) : null}
-        {/* 설명은 표제 아래 제자리에. 예전엔 요약이 제목 노릇을 해서
-            읽을 문장이 표제 자리에 올라가 있었다 */}
-        {item.summary ? (
-          <p className="pt-1 text-[15px] leading-relaxed text-mid text-pretty">
-            {item.summary}
-          </p>
-        ) : null}
       </div>
 
       {/*
-        도면은 이 블록에 96px(세 줄분)을 미리 비워 카드 높이를 맞춘다.
-        ⚠ 다만 relevance 가 없을 때까지 블록을 그리면 빈 색 상자만 남는다 —
-          요약 단계를 안 거친 기사가 실제로 그렇다. 그래서 있을 때만 그린다.
+        요약과 "왜 중요한가" 를 한 상자에 담는다.
+        ⚠ 예전엔 요약이 상자 위 맨 문단이었다. 그러면 카드에 글 덩어리가 둘이 되어
+          어느 쪽을 먼저 읽어야 하는지가 흐려진다. 한 상자에 넣고 안에서만 나눈다.
+        ⚠ 둘 다 없으면 아예 안 그린다 — 요약 단계를 안 거친 기사가 그렇고,
+          그때 빈 색 상자만 남으면 고장 난 것처럼 보인다.
       */}
-      {item.relevance ? (
-        <p className="border-l-2 border-accent bg-accent-soft px-3.5 py-3 text-sm leading-relaxed text-accent-ink text-pretty sm:min-h-24">
-          {item.relevance}
-        </p>
+      {item.summary || item.relevance ? (
+        <div className="flex flex-col gap-2 border-l-2 border-accent bg-accent-soft px-3.5 py-3 text-accent-ink sm:min-h-24">
+          {item.summary ? (
+            <p className="text-sm leading-relaxed text-pretty">{item.summary}</p>
+          ) : null}
+          {item.relevance ? (
+            /* 왜 중요한가엔 한 겹 더 힘을 준다 — 요약은 사실이고 이건 판단이다 */
+            <p className="text-sm leading-relaxed font-medium text-pretty">
+              {item.relevance}
+            </p>
+          ) : null}
+        </div>
       ) : null}
 
       {/* mt-auto — 카드 높이가 제각각이어도 버튼 줄은 바닥에 나란히 선다 */}
@@ -517,8 +545,14 @@ function SkimList({ items }: { items: NewsItem[] }) {
           key={item.id}
           className="flex min-h-11 flex-col gap-1 border-b border-line py-3 sm:flex-row sm:items-center sm:gap-4"
         >
-          <span className="min-w-0 flex-1 text-sm leading-snug break-keep">
-            {item.summary ?? item.title}
+          {/* ⚠ summary 가 아니라 headline 이다. 요약은 두세 문장이라 한 줄
+              목록에 넣으면 줄이 통째로 문단이 된다. 표제가 없으면(요약 전이면)
+              원제로 물러난다. */}
+          <span className="flex min-w-0 flex-1 items-baseline gap-2">
+            <Score value={item.score} />
+            <span className="min-w-0 flex-1 text-sm leading-snug break-keep">
+              {item.headline ?? item.title}
+            </span>
           </span>
           <span className="flex items-center gap-3 text-xs text-dim">
             <span className="shrink-0">{item.source}</span>
@@ -532,7 +566,7 @@ function SkimList({ items }: { items: NewsItem[] }) {
               href={item.url}
               target="_blank"
               rel="noreferrer noopener"
-              title={`${item.summary ?? item.title} 원문 열기`}
+              title={`${item.headline ?? item.title} 원문 열기`}
               className="flex size-10 shrink-0 items-center justify-center rounded-[10px] border border-line text-mid hover:bg-fg/[0.07] hover:text-accent active:bg-fg/[0.14]"
             >
               <ExternalLink size={16} strokeWidth={1.5} aria-hidden="true" />

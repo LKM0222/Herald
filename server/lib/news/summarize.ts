@@ -122,6 +122,7 @@ export async function summarize(items: NewsItem[]): Promise<SummarizeResult> {
   const tier = new Map<string, Priority>();
   const scores = new Map<string, number>();
   const topics = new Map<string, string>();
+  const heads = new Map<string, string>();
   const ranked = [...triage.picks].sort((a, b) => b.score - a.score);
 
   for (const band of TIERS) {
@@ -132,6 +133,7 @@ export async function summarize(items: NewsItem[]): Promise<SummarizeResult> {
   for (const pick of triage.picks) {
     scores.set(pick.id, pick.score);
     if (pick.topic) topics.set(pick.id, pick.topic);
+    if (pick.headline) heads.set(pick.id, pick.headline);
   }
 
   /* 원문까지 읽을 것 — 1층부터 점수 순으로. 1층이 빈 날에도 2층 상위를
@@ -179,12 +181,16 @@ export async function summarize(items: NewsItem[]): Promise<SummarizeResult> {
     .map((item) => {
       const detail = deep.get(item.id);
       const topic = topics.get(item.id);
+      /* 표제는 1차(모든 항목)가 만들고, 원문을 읽은 2차가 있으면 그것으로
+         덮는다. 2차는 본문을 봤으니 더 정확하다. 없으면 1차 것을 쓴다 —
+         2·3층은 원문을 안 읽으므로 늘 1차 표제다. */
+      const headline = detail?.headline || heads.get(item.id) || "";
       return {
         ...item,
         priority: tier.get(item.id) as Priority,
         score: scores.get(item.id),
         ...(topic ? { topic } : {}),
-        ...(detail?.headline ? { headline: detail.headline } : {}),
+        ...(headline ? { headline } : {}),
         ...(detail?.summary ? { summary: detail.summary } : {}),
         ...(detail?.relevance ? { relevance: detail.relevance } : {}),
       };
@@ -229,6 +235,13 @@ ${INTERESTS}
   점수를 올리지 마라.
 - 재미있어 보이는 것과 나한테 쓸모 있는 것을 헷갈리지 않는다. 쓸모가 우선이다.
 
+headline 은 **화면에 뜰 제목**이다. 원제가 영어거나 길어서 그대로는 못 쓴다.
+- 한국어 **명사구**로 15~30자. 문장이 아니다. 마침표를 찍지 않는다.
+- 사실 **하나만** 담는다. 쉼표로 여러 개를 잇지 마라.
+- ⚠ 요약이 아니다. 목록에서 한 줄로 훑는 제목이라 길면 쓸모가 없다.
+  예) \`llm-anthropic, anthropic SDK 1.0 대응\`
+      \`AI 코드 리뷰 반복 횟수 400회 실측\`
+
 topic 은 "AI 코딩", "웹 프레임워크" 처럼 **짧은 한국어 명사구**로 쓴다.
 headline 은 오늘 하루를 한 문장으로 적는다. 한국어로, 과장 없이.
 숫자를 부풀리거나 없는 사건을 만들지 않는다.`;
@@ -239,6 +252,7 @@ const BRIEF_SYSTEM = `당신은 개발자 한 사람을 위한 아침 브리핑�
 ${INTERESTS}
 
 - **headline** — 화면의 제목 자리에 그대로 들어간다. 큰 글씨 한 줄이다.
+  (1차에서 제목만 보고 지은 표제가 이미 있다. 원문을 읽었으니 더 정확하게 고쳐 쓴다)
   · 한국어 **명사구**로 15~30자. 문장이 아니다. 마침표를 찍지 않는다.
   · 사실 **하나만** 담는다. 쉼표로 여러 개를 잇지 마라.
   · 원제를 그대로 옮기지 마라. 원제는 따로 표시된다.
@@ -295,9 +309,13 @@ const PICK = {
       type: "integer",
       description: `0~100. ${FLOOR} 미만이면 이 목록에 넣지 않는다`,
     },
+    headline: {
+      type: "string",
+      description: "화면에 뜰 한국어 표제. 명사구 15~30자. 마침표 없음",
+    },
     topic: { type: "string", description: "짧은 한국어 명사구" },
   },
-  required: ["id", "score", "topic"],
+  required: ["id", "score", "headline", "topic"],
 } as const;
 
 const TRIAGE_TOOL = {
@@ -439,7 +457,7 @@ async function ask(
 
 // ── 응답 읽기 ────────────────────────────────────────────
 
-type Pick = { id: string; score: number; topic: string };
+type Pick = { id: string; score: number; headline: string; topic: string };
 type Triage = { headline: string; picks: Pick[] };
 
 /**
@@ -462,10 +480,14 @@ function readTriage(input: Record<string, unknown>, items: NewsItem[]): Triage {
        모델이 실수로 낮은 점수를 적어 보낸 것을 통과시키면 안 된다. */
     if (!Number.isFinite(score) || score < FLOOR) continue;
 
+    const head = (one as { headline?: unknown })?.headline;
     taken.add(id);
     picks.push({
       id,
       score: Math.min(100, Math.max(0, score)),
+      // 표제에 마침표가 붙어 오면 제목 자리에서 어색하다. 조용히 떼어낸다.
+      headline:
+        typeof head === "string" ? head.trim().replace(/[.。]\s*$/, "") : "",
       topic: typeof topic === "string" ? topic.trim() : "",
     });
   }

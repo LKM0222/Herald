@@ -1,4 +1,4 @@
-import type { NewsItem } from "@shared/types";
+import type { Area, NewsItem } from "@shared/types";
 import { readSettings } from "../settings";
 import { collect, type SourceReport } from "./collect";
 import type { OriginReport } from "./origin";
@@ -27,9 +27,13 @@ export type PendingResult = {
   items: NewsItem[];
   /** 소스별 수집 상황. 왜 비었는지가 보여야 한다 */
   reports: SourceReport[];
+  /** 영역별 건수. 이미 요약한 것을 뺀 뒤의 값이다 */
+  byArea: Record<Area, number>;
+  /** 다른 영역이 이미 가져가서 뺀 건수 */
+  crossArea: number;
   /** 이미 요약해서 뺀 건수 */
   skipped: number;
-  /** 전체 상한에 걸려 버린 건수 */
+  /** 영역 상한에 걸려 버린 건수 */
   dropped: number;
   /** 같은 기사라 합친 건수 */
   merged: number;
@@ -53,13 +57,11 @@ export async function pending(
   const enabled = options.enabled ?? readSettings().enabledSources;
   const hours = Math.min(options.hours ?? WINDOW_HOURS, MAX_CATCHUP_HOURS);
 
-  const { items, reports, dropped, merged, origins } = await collect({
-    enabled,
-    hours,
-  });
+  const { items, reports, byArea, crossArea, dropped, merged, origins } =
+    await collect({ enabled, hours });
 
   if (options.includeSummarized) {
-    return { items, reports, skipped: 0, dropped, merged, origins, hours };
+    return { items, reports, byArea, crossArea, skipped: 0, dropped, merged, origins, hours };
   }
 
   const done = loadSummarized();
@@ -68,10 +70,20 @@ export async function pending(
   return {
     items: fresh,
     reports,
+    // 걸러낸 뒤로 다시 센다. 수집 시점 값을 그대로 두면 "오늘 경제 25건" 인데
+    // 화면엔 3건만 뜨는 이유가 안 보인다 — 나머지는 어제 이미 요약한 것들이다.
+    byArea: tally(fresh),
+    crossArea,
     skipped: items.length - fresh.length,
     dropped,
     merged,
     origins,
     hours,
   };
+}
+
+function tally(items: NewsItem[]): Record<Area, number> {
+  const out = { dev: 0, game: 0, finance: 0, general: 0 };
+  for (const item of items) out[item.area ?? "dev"] += 1;
+  return out;
 }

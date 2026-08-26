@@ -1,6 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 import { CATALOG, type SourceInfo } from "@shared/sources";
-import type { NewsItem } from "@shared/types";
+import { AREA_IDS, type Area, type NewsItem } from "@shared/types";
 import { resolveOrigins, type OriginReport } from "./origin";
 import { idFor } from "./url";
 
@@ -48,13 +48,30 @@ const EXCERPT_MAX = 1500;
 const EXCERPT_MIN = 20;
 
 /**
- * 하루치 전체 상한.
+ * 영역별 수집 상한. **실질적인 비용 손잡이가 이 표다.**
  *
  * ⚠ 소스마다 고정 상한을 두지 않는다. 예전엔 소스당 30건으로 잘랐는데,
  *   전체가 63건일 때도 GeekNews 20건이 버려졌다 — 아무도 밀어내지 않는데
- *   버린 것이다. 상한은 **전체가 넘칠 때만** 돈다.
+ *   버린 것이다. 상한은 **그 영역이 넘칠 때만** 돈다.
+ *
+ * ⚠ 예전엔 전체 하나(120)였다. 영역이 넷이 된 뒤로도 그대로 두면 **양이 곧 지분**이
+ *   된다 — 연합뉴스 하나가 하루 120건 이상이라(피드가 120에서 자른 값이다)
+ *   개발·게임을 밀어내고 상한을 다 먹는다. 영역마다 따로 자르면 그 일이 없다.
+ *
+ * ⚠ 이건 **모델에 넣기 전에 자르는 값**이라, 화면에 몇 칸을 띄울지(summarize.ts 의
+ *   TIERS 상한)와는 다른 물건이다. 여기를 올리면 토큰이 오르고 저기를 올리면
+ *   화면이 길어진다.
+ *
+ * 실측: 켤 수 있는 소스를 전부 켜면 하루 570건이 들어온다
+ * (개발 71 · 게임 100 · 경제 200+ · 일반 200+). 다 채점하면 15만 토큰이다.
+ * 아래 표로 자르면 135건 · 3만 5천 토큰 안팎이 된다.
  */
-const TOTAL_MAX = 120;
+const AREA_MAX: Record<Area, number> = {
+  dev: 60,
+  game: 25,
+  finance: 25,
+  general: 25,
+};
 
 /**
  * caldav.ts 와 같은 설정을 쓴다.
@@ -87,7 +104,14 @@ export type SourceReport = {
 export type CollectResult = {
   items: NewsItem[];
   reports: SourceReport[];
-  /** 전체 상한에 걸려 잘린 건수 */
+  /** 영역별 건수. 한 영역이 통째로 빈 것을 총계만 보면 알 수 없다 */
+  byArea: Record<Area, number>;
+  /**
+   * 다른 영역이 이미 가져가서 뺀 건수.
+   * 연합뉴스는 종합과 경제 피드에 같은 기사를 23% 겹쳐 싣는다 — 실측값이다.
+   */
+  crossArea: number;
+  /** 영역 상한에 걸려 잘린 건수 */
   dropped: number;
   /** 같은 기사라 합친 건수. 0 이 아니면 원본 주소 복원이 일하고 있다는 뜻이다 */
   merged: number;
@@ -123,10 +147,26 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
   const raw = settled.flatMap((one) => one.items);
   const { items: restored, report: origins } = await resolveOrigins(raw);
 
+  /* ⚠ 중복 제거는 **영역을 가로질러** 한 번만 돈다. 영역 안에서만 돌리면
+     연합뉴스 종합·경제에 겹쳐 실린 같은 기사가 일반 탭과 경제 탭에 각각
+     남고, 서로 다른 기준으로 매긴 **점수 두 개**가 한 기사에 붙는다.
+     어느 영역이 가져갈지는 keepBetter 가 AREA_IDS 순서로 정한다. */
   const merged = dedupe(restored);
   merged.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
 
-  const items = merged.length <= TOTAL_MAX ? merged : ration(merged);
+  // 겹쳐서 사라진 건수를 영역이 다른 것만 따로 센다 — 같은 영역 안의 중복과
+  // 원인이 다르다. 이 값이 크면 소스 두 곳이 사실상 같은 피드라는 뜻이다.
+  const crossArea = countCrossArea(restored);
+
+  /* 상한은 **영역마다 따로** 건다. 하나로 걸면 양 많은 영역이 다 먹는다. */
+  const items: NewsItem[] = [];
+  for (const area of AREA_IDS) {
+    const mine = merged.filter((item) => item.area === area);
+    items.push(
+      ...(mine.length <= AREA_MAX[area] ? mine : ration(mine, AREA_MAX[area])),
+    );
+  }
+  items.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
 
   // 어느 소스가 얼마나 잘렸는지 남긴다. 총 몇 건 버렸다고만 하면
   // 한 소스가 통째로 사라진 것을 알 수 없다.
@@ -140,22 +180,46 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
   return {
     items,
     reports,
+    byArea: tally(items),
+    crossArea,
     dropped: merged.length - items.length,
     merged: restored.length - merged.length,
     origins,
   };
 }
 
+function tally(items: NewsItem[]): Record<Area, number> {
+  const out = Object.fromEntries(AREA_IDS.map((id) => [id, 0])) as Record<Area, number>;
+  for (const item of items) if (item.area) out[item.area] += 1;
+  return out;
+}
+
+/** 영역이 다른데 같은 기사라 합쳐진 건수. dedupe 와 같은 열쇠를 쓴다 */
+function countCrossArea(items: NewsItem[]): number {
+  const areaOf = new Map<string, Set<Area>>();
+  for (const item of items) {
+    if (!item.area) continue;
+    const key = titleKey(item.title) || item.id;
+    const seen = areaOf.get(key);
+    if (seen) seen.add(item.area);
+    else areaOf.set(key, new Set([item.area]));
+  }
+  let n = 0;
+  for (const areas of areaOf.values()) if (areas.size > 1) n += areas.size - 1;
+  return n;
+}
+
 type One = { items: NewsItem[]; report: SourceReport };
 
 /**
- * 상한을 넘었을 때 소스별로 돌아가며 고른다.
+ * 상한을 넘었을 때 **한 영역 안에서** 소스별로 돌아가며 고른다.
  *
  * 그냥 최신순으로 자르면 그날 시끄러웠던 한 곳이 상한을 다 먹고 조용한 곳이
  * 통째로 빠진다. 1차 발표(OpenAI · GitHub)는 하루 한 건인데 그 한 건이
- * 잘려나가는 게 제일 아프다.
+ * 잘려나가는 게 제일 아프다. 경제 영역도 같다 — 연합뉴스 경제가 120건이라
+ * 돌아가며 고르지 않으면 이데일리 증권이 통째로 사라진다.
  */
-function ration(items: NewsItem[]): NewsItem[] {
+function ration(items: NewsItem[], limit: number): NewsItem[] {
   const queues = new Map<string, NewsItem[]>();
   for (const item of items) {
     const queue = queues.get(item.source);
@@ -164,14 +228,14 @@ function ration(items: NewsItem[]): NewsItem[] {
   }
 
   const out: NewsItem[] = [];
-  while (out.length < TOTAL_MAX) {
+  while (out.length < limit) {
     let moved = false;
     for (const queue of queues.values()) {
       const next = queue.shift();
       if (!next) continue;
       out.push(next);
       moved = true;
-      if (out.length >= TOTAL_MAX) break;
+      if (out.length >= limit) break;
     }
     if (!moved) break; // 다 꺼냈다
   }
@@ -341,6 +405,9 @@ function toItem(
 
   return {
     id: idFor(url),
+    // 영역은 **소스가 정한다.** 모델에게 묻지 않는다 — 어느 탭에 실릴지는
+    // 판단이 아니라 사실이고, 판단으로 두면 날마다 탭이 바뀐다.
+    area: source.area,
     title,
     url,
     source: source.name,
@@ -415,17 +482,29 @@ function dedupe(items: NewsItem[]): NewsItem[] {
 /**
  * 같은 기사가 두 소스에서 왔을 때 **어느 쪽을 남길지.**
  *
- * 먼저 본 쪽이 아니라 **발췌가 긴 쪽**을 남긴다. 판단 재료가 많은 쪽이기 때문이다.
- * 실제로 이게 갈린다 — Apple 발표를 GeekNews 는 한국어 요약 155자로 주고
- * Hacker News 는 발췌 없이 준다. 먼저 본 쪽을 남기면 소스 목록 순서라는
- * 아무 상관 없는 이유로 재료가 사라진다.
+ * ⚠ **영역이 다르면 영역이 먼저 정한다** — 좁은 영역이 이긴다(AREA_IDS 순서).
+ *   연합뉴스 경제와 종합에 같은 기사가 실리면 경제가 가져간다. 발췌 길이로
+ *   정하면 같은 기사가 날마다 다른 탭에 뜬다 — 그날 어느 피드가 본문을 더
+ *   길게 실었느냐는 우연에 탭이 흔들린다.
+ *
+ * 영역이 같으면 먼저 본 쪽이 아니라 **발췌가 긴 쪽**을 남긴다. 판단 재료가 많은
+ * 쪽이기 때문이다. 실제로 이게 갈린다 — Apple 발표를 GeekNews 는 한국어 요약
+ * 155자로 주고 Hacker News 는 발췌 없이 준다. 먼저 본 쪽을 남기면 소스 목록
+ * 순서라는 아무 상관 없는 이유로 재료가 사라진다.
  *
  * 진 쪽은 alsoIn 에 남아 화면에서 눌러 갈 수 있다.
  */
 function keepBetter(a: NewsItem, b: NewsItem): NewsItem {
-  const [win, lose] = (b.excerpt?.length ?? 0) > (a.excerpt?.length ?? 0)
-    ? [b, a]
-    : [a, b];
+  const rank = (item: NewsItem) =>
+    item.area ? AREA_IDS.indexOf(item.area) : AREA_IDS.length;
+  const [win, lose] =
+    rank(a) !== rank(b)
+      ? rank(a) < rank(b)
+        ? [a, b]
+        : [b, a]
+      : (b.excerpt?.length ?? 0) > (a.excerpt?.length ?? 0)
+        ? [b, a]
+        : [a, b];
   return {
     ...win,
     alsoIn: [

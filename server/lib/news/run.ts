@@ -2,7 +2,7 @@ import type { Briefing } from "@shared/types";
 import { saveArchive, saveBriefing } from "../briefing/store";
 import { pending } from "./pending";
 import { markSummarized } from "./seen";
-import { summarize, type Usage } from "./summarize";
+import { summarize, type AreaOutcome, type Usage } from "./summarize";
 
 /**
  * 하루치 브리핑을 한 번 만든다. **토큰을 쓰는 유일한 자동 경로다.**
@@ -23,6 +23,8 @@ export type RunResult =
       date: string;
       /** 요약한 기사 수 */
       count: number;
+      /** 영역별 결과. 한 영역이 실패해도 나머지는 나오므로 여기서 확인한다 */
+      areas: AreaOutcome[];
       /** 실제로 쓴 토큰. 추정이 아니다 */
       usage: Usage;
       notes: string[];
@@ -44,6 +46,8 @@ export async function runBriefing(date: string): Promise<RunResult> {
     collect: {
       items: collected.items,
       reports: collected.reports,
+      byArea: collected.byArea,
+      crossArea: collected.crossArea,
       skipped: collected.skipped,
       dropped: collected.dropped,
       merged: collected.merged,
@@ -84,6 +88,9 @@ export async function runBriefing(date: string): Promise<RunResult> {
     articles: result.articles,
     usage: result.usage,
     notes: result.notes,
+    // 영역별로 몇 건 들어와 몇 건이 올라갔나. 총계만 보면 한 영역이 조용히
+    // 통째로 실패한 것을 못 본다 — 다른 영역이 채워서 숫자가 그럴듯해진다.
+    areas: result.areas,
   });
   markSummarized(
     result.news.map((item) => item.id),
@@ -94,6 +101,7 @@ export async function runBriefing(date: string): Promise<RunResult> {
     ok: true,
     date,
     count: result.news.length,
+    areas: result.areas,
     usage: result.usage,
     notes: result.notes,
     ms: Date.now() - started,

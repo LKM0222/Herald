@@ -186,9 +186,14 @@ function LeadCard({
         </span>
       </div>
 
-      <h3 className="max-w-[24ch] font-display text-2xl leading-[1.18] sm:text-[31px]">
-        {item.summary ?? item.title}
+      <h3 className="max-w-[24ch] font-display text-2xl leading-[1.18] break-keep sm:text-[31px]">
+        {item.headline ?? item.title}
       </h3>
+      {/* 표제가 있으면 그건 우리가 지은 말이다. 같은 기사가 맞는지 대조할
+          원제를 바로 밑에 붙인다 — 설명 문단 끝에 매달면 문장이 안 끝난다 */}
+      {item.headline ? (
+        <p className="text-xs leading-[1.4] text-dim">원제 · {item.title}</p>
+      ) : null}
 
       <p className="max-w-[56ch] text-[15px] leading-relaxed text-mid text-pretty">
         {describeItem(item)}
@@ -212,17 +217,29 @@ function LeadCard({
   );
 }
 
-/** 관련성 · 중복 보도 · 원제를 한 문단으로 잇는다. 없는 조각은 빠진다. */
+/**
+ * 요약 · 관련성 · 중복 보도를 한 문단으로 잇는다. 없는 조각은 빠진다.
+ *
+ * ⚠ **어미를 여기서 만들지 않는다.** 예전엔 "원제는 ... 예요" 를 붙였는데,
+ *   모델은 '~다' 로 쓰고 화면은 '~예요' 로 이어서 한 문단 안에서 존댓말이
+ *   오락가락했다. 게다가 앞 조각이 이미 마침표로 끝나 "공지다.. 원제는" 처럼
+ *   점이 겹쳤다. 문체는 프롬프트가 정하고 화면은 잇기만 한다.
+ *
+ * ⚠ 원제는 이 문단에 안 넣는다. 위에서 제목 바로 밑에 따로 보여준다 —
+ *   설명 문장 끝에 영어 원제를 매달면 문장이 끝난 줄 모르고 계속 읽게 된다.
+ */
 function describeItem(item: NewsItem): string {
   const parts: string[] = [];
+  if (item.summary) parts.push(item.summary);
   if (item.relevance) parts.push(item.relevance);
 
   const extra = item.alsoIn?.length ?? 0;
-  if (extra > 0) parts.push(`같은 사건을 다른 매체 ${extra}곳도 다뤘어요`);
+  if (extra > 0) parts.push(`같은 사건을 다른 매체 ${extra}곳이 함께 다뤘다`);
 
-  if (item.summary) parts.push(`원제는 ${item.title} 예요`);
-
-  return parts.length > 0 ? `${parts.join(". ")}.` : item.title;
+  // 조각마다 마침표가 이미 있을 수 있다. 있으면 그대로, 없으면 하나 붙인다.
+  return parts.length > 0
+    ? parts.map((part) => (/[.!?]$/.test(part) ? part : `${part}.`)).join(" ")
+    : item.title;
 }
 
 function ContinueSection({ briefing }: { briefing: Briefing }) {

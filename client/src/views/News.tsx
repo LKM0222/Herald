@@ -358,11 +358,18 @@ function LeadCard({
 
       <div className="flex flex-col gap-1.5">
         <h4 className="max-w-[38ch] font-display text-2xl leading-[1.18] break-keep sm:text-[31px]">
-          {item.summary ?? item.title}
+          {item.headline ?? item.title}
         </h4>
-        {/* 요약이 없으면 위 제목이 이미 원제다. 같은 문장을 두 번 쓰지 않는다 */}
-        {item.summary ? (
+        {/* 표제가 없으면 위가 이미 원제다. 같은 문장을 두 번 쓰지 않는다 */}
+        {item.headline ? (
           <p className="text-xs leading-[1.4] text-dim">원제 · {item.title}</p>
+        ) : null}
+        {/* 설명은 표제 아래 제자리에. 예전엔 요약이 제목 노릇을 해서
+            읽을 문장이 표제 자리에 올라가 있었다 */}
+        {item.summary ? (
+          <p className="max-w-[68ch] pt-1 text-[15px] leading-relaxed text-mid text-pretty">
+            {item.summary}
+          </p>
         ) : null}
       </div>
 

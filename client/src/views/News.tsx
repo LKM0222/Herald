@@ -897,6 +897,13 @@ function LeadCard({
 }
 
 /**
+ * 2·3층 행 끝의 아이콘 버튼 하나. 담아두기와 원문이 **같은 상자**를 쓴다 —
+ * 둘이 나란히 서는데 크기나 모서리가 다르면 그게 먼저 눈에 띈다.
+ */
+const ROW_ACTION =
+  "flex size-10 shrink-0 items-center justify-center rounded-[10px] border border-line";
+
+/**
  * 2층 — 한 줄짜리 행.
  *
  * 도면 5A 에서 표(table)가 사라지고 행 끝에 **바로가기 버튼**이 붙었다.
@@ -928,15 +935,29 @@ function SkimList({ items }: { items: NewsItem[] }) {
             <span className="shrink-0">{formatRelative(item.publishedAt)}</span>
             {item.topic ? <Tag tone="accent">{item.topic}</Tag> : null}
             {/*
-              도면의 28px 을 40px 로 키웠다 — CLAUDE.md 가 조밀한 컨트롤도
-              40px 밑으로 내리지 말라고 못박아 뒀고, 이건 폰에서 누르는 것이다.
+              도면 10A 는 행 끝에 **담아두기 · 원문 두 개**를 32px 로 그렸다.
+              40px 로 키운 건 CLAUDE.md 가 조밀한 컨트롤도 40px 밑으로 내리지
+              말라고 못박아 뒀고, 이건 폰에서 누르는 것이어서다.
+
+              ⚠ 담아두기는 **아직 아무 일도 하지 않는다.** disabled 로 두는
+                이유가 그거다 — 눌렀는데 반응이 없는 버튼이 제일 나쁘다.
+                흐린 정도(45%)는 1층 버튼 줄의 PendingButton 과 같은 값이라
+                세 층에서 "준비 중" 이 같은 얼굴을 한다.
             */}
+            <button
+              type="button"
+              disabled
+              title="담아두기 — 다음 단계에서 연결됩니다"
+              className={`${ROW_ACTION} cursor-not-allowed text-mid opacity-45`}
+            >
+              <Bookmark size={16} strokeWidth={1.5} aria-hidden="true" />
+            </button>
             <a
               href={item.url}
               target="_blank"
               rel="noreferrer noopener"
               title={`${item.headline ?? item.title} 원문 열기`}
-              className="flex size-10 shrink-0 items-center justify-center rounded-[10px] border border-line text-mid hover:bg-fg/[0.07] hover:text-accent active:bg-fg/[0.14]"
+              className={`${ROW_ACTION} text-mid hover:bg-fg/[0.07] hover:text-accent active:bg-fg/[0.14]`}
             >
               <ExternalLink size={16} strokeWidth={1.5} aria-hidden="true" />
             </a>

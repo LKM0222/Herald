@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { formatKoreanDate, formatRelative, shiftISO } from "@shared/date";
 import { AREA_IDS, type Area, type Briefing, type NewsItem, type Priority } from "@shared/types";
 import { AREAS } from "@shared/sources";
@@ -237,11 +244,28 @@ export function News({
     칩을 바꾸면 맨 위 층부터 다시 본다.
     안 되돌리면 3층을 보다가 기사가 두 건뿐인 영역으로 갈아탔을 때 스크롤이
     그대로 남아, 칸이 없어진 자리에서 빈 화면을 보게 된다.
+
+    ⚠ setPick 옆에서 곧바로 scrollTo 를 부르면 **안 먹는다.** 그 순간 DOM 은 아직
+      옛 층 목록이라 0 으로 가긴 가는데, 바로 뒤 React 가 층을 하나 **위에**
+      끼워 넣으면 (개발엔 1층이 없고 게임엔 있다) 브라우저가 "보고 있던 칸" 을
+      제자리에 붙잡아 두려고 스크롤을 그만큼 도로 밀어 준다 — 스크롤 앵커링과
+      스냅 재조준이 둘 다 그렇게 동작한다. 층은 key={priority} 라 옛 칸의 DOM
+      노드가 그대로 살아남아서 붙잡을 것이 있다.
+
+      그래서 DOM 이 바뀐 **뒤에**, 그리고 그리기 전에 되돌린다.
+      · useLayoutEffect  — 커밋 후 · 페인트 전. useEffect 면 한 프레임 깜빡인다
+      · scrollHeight 읽기 — 브라우저가 앵커링·재조준을 여기서 먼저 끝내게 한다.
+        그 뒤에 0 을 넣어야 우리 값이 마지막이 된다
+      · behavior:"instant" — 부드럽게 굴러가는 동안 스냅이 끼어들지 못하게
+      (앵커링 자체는 index.css 의 overflow-anchor:none 으로도 막아 뒀다)
   */
-  const choose = (next: Pick) => {
-    setPick(next);
-    rootRef.current?.scrollTo({ top: 0 });
-  };
+  useLayoutEffect(() => {
+    const scroller = rootRef.current;
+    if (!scroller) return;
+    void scroller.scrollHeight;
+    scroller.scrollTo({ top: 0, behavior: "instant" });
+    // 날짜가 바뀌어도 같다 — 그날 층 구성이 통째로 달라진다.
+  }, [pick, date]);
 
   // 지난 날짜를 보고 있을 때만 나온다. 도면엔 없지만 이게 없으면 오늘로 돌아올
   // 길이 화면에서 사라진다 — 예전엔 층 머리띠가 들고 있던 링크다.
@@ -269,7 +293,7 @@ export function News({
         기사가 아예 없는 날엔 고를 것이 없으니 줄 자체를 안 세운다.
       */}
       {briefing.news.length > 0 ? (
-        <AreaChips news={briefing.news} pick={pick} onPick={choose} />
+        <AreaChips news={briefing.news} pick={pick} onPick={setPick} />
       ) : null}
       {/*
         구르는 건 이 안쪽이다 — 날짜줄은 밖에 남아 붙박이가 된다 (도면 5A).

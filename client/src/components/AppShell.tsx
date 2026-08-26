@@ -1,11 +1,19 @@
 import type { ReactNode } from "react";
 import type { LaunchItem } from "@shared/types";
 import { useLoading } from "../lib/loading";
-import { hrefFor, MOBILE_ORDER, VIEWS, type ViewDef, type ViewId } from "../lib/views";
+import {
+  DESKTOP_TABS,
+  findView,
+  HEADER_VIEW,
+  hrefFor,
+  MOBILE_TABS,
+  tabsIn,
+  type ViewDef,
+  type ViewId,
+} from "../lib/views";
 import { Launchpad } from "./Launchpad";
 import { LoadingBar, TabSpinner } from "./Loading";
 import { Logo } from "./Logo";
-import { ThemeToggle } from "./ThemeToggle";
 import { Tag } from "./ui";
 
 export function AppShell({
@@ -15,6 +23,7 @@ export function AppShell({
   sample,
   date,
   launchpad,
+  bleed,
   children,
 }: {
   view: ViewId;
@@ -25,9 +34,21 @@ export function AppShell({
   date?: string;
   /** 브리핑을 못 불러온 화면에선 없다 */
   launchpad?: LaunchItem[];
+  /**
+   * 가운데 칸의 여백을 뷰가 **직접** 든다는 표시. 뉴스 본문만 그렇다 —
+   * 층이 화면을 통째로 차지하며 스냅해서, 여백이 <main> 에 있으면 스냅 지점이
+   * 그만큼 밀려 칸이 화면에 딱 맞지 않는다 (도면 5A · 6B).
+   *
+   * ⚠ "뉴스 탭인가" 가 아니라 "뉴스 **본문**이 그려지는가" 다. 같은 탭이라도
+   *   기다리는 표시나 안내 상자가 대신 설 때는 그것들이 제 여백을 안 들고 있어서
+   *   화면 왼쪽 위 모서리에 그대로 붙는다.
+   */
+  bleed?: boolean;
   children: ReactNode;
 }) {
-  const mobileViews = MOBILE_ORDER.map((id) => VIEWS.find((v) => v.id === id)!);
+  const desktopTabs = tabsIn(DESKTOP_TABS);
+  const mobileTabs = tabsIn(MOBILE_TABS);
+  const headerView = findView(HEADER_VIEW)!;
   /*
     이 탭이 제 데이터를 기다리는 중인지 (lib/loading.tsx).
     show 는 250ms 를 넘긴 뒤에야 켜진다 — 눈 깜빡할 사이에 끝나는 요청까지
@@ -66,7 +87,11 @@ export function AppShell({
               <Tag tone="outline">샘플 데이터예요</Tag>
             </span>
           ) : null}
-          <ThemeToggle />
+          {/*
+            설정은 탭이 아니라 머리줄에 있다 — 모바일·PC 같은 자리다.
+            밝기(라이트·다크·시스템)는 이 안으로 들어갔다: 겉모습 구획의 제목 오른쪽.
+          */}
+          <HeaderAction item={headerView} current={view} date={date} loading={loading} />
         </div>
       </header>
 
@@ -77,7 +102,7 @@ export function AppShell({
       <div className="flex min-h-0 flex-1">
         {/* 사이드바 — PC 전용. 고정이라 md:min-h-0 을 안 주고 shrink-0 만 둔다 */}
         <nav className="hidden w-44 shrink-0 flex-col gap-0.5 border-r border-line py-4 md:flex">
-          {VIEWS.map((item) => (
+          {desktopTabs.map((item) => (
             <NavItem
               key={item.id}
               item={item}
@@ -127,9 +152,9 @@ export function AppShell({
           <main
             data-scrollarea
             className={`flex min-h-0 min-w-0 flex-1 items-start overflow-y-auto lg:items-stretch ${
-              view === "news"
+              bleed
                 ? /*
-                     뉴스 탭만 예외다. 층마다 화면을 통째로 차지하며 스냅하는데
+                     뉴스 **본문**만 예외다. 층마다 화면을 통째로 차지하며 스냅하는데
                      (News.tsx), 여백이 여기 있으면 스냅 지점이 그만큼 밀려
                      칸이 화면에 딱 맞지 않는다 — 여백은 칸이 각자 든다 (도면 5A · 6B).
                   */
@@ -150,7 +175,7 @@ export function AppShell({
           <main> 높이에서 애초에 빠져 그 계산이 전부 사라진다.
       */}
       <nav className="flex shrink-0 border-t border-line bg-surface md:hidden">
-        {mobileViews.map((item) => (
+        {mobileTabs.map((item) => (
           <TabItem
             key={item.id}
             item={item}
@@ -161,6 +186,51 @@ export function AppShell({
         ))}
       </nav>
     </div>
+  );
+}
+
+/**
+ * 머리줄의 톱니 (도면 9A~9C 의 오른쪽 위). 탭 줄에서 빠진 설정이 여기 선다.
+ *
+ * ⚠ 아이콘만 있고 글자가 없다 — 그래서 **누르는 자리를 44px 로 따로 잡는다**.
+ *   아이콘 크기(18px)만큼만 두면 폰에서 못 누른다 (CLAUDE.md).
+ * ⚠ 기다리는 동안 아이콘을 도는 원으로 갈아 끼우는 건 하단 탭과 같은 문법이다
+ *   (abdf079). 설정이 탭 줄에서 빠지면서 이 화면만 진행 표시가 없어질 뻔했다.
+ */
+function HeaderAction({
+  item,
+  current,
+  date,
+  loading,
+}: {
+  item: ViewDef;
+  current: ViewId;
+  date?: string;
+  loading: boolean;
+}) {
+  const active = item.id === current;
+  const { Icon } = item;
+  const waiting = active && loading;
+
+  return (
+    <a
+      href={hrefFor(item.id, date)}
+      aria-label={item.label}
+      title={item.label}
+      aria-current={active ? "page" : undefined}
+      aria-busy={waiting || undefined}
+      className={`flex size-11 shrink-0 items-center justify-center rounded-full border transition-colors ${
+        active
+          ? "border-accent bg-accent-soft text-accent"
+          : "border-line text-dim hover:bg-fg/[0.07] hover:text-fg"
+      }`}
+    >
+      {waiting ? (
+        <TabSpinner size={18} />
+      ) : (
+        <Icon size={18} strokeWidth={1.5} aria-hidden="true" />
+      )}
+    </a>
   );
 }
 

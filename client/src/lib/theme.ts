@@ -64,3 +64,22 @@ export function watchSystemTheme(onChange: () => void): () => void {
   query.addEventListener("change", onChange);
   return () => query.removeEventListener("change", onChange);
 }
+
+/**
+ * OS 설정을 따라가는 일을 **앱 전체가** 맡는다 (main.tsx 에서 한 번 부른다).
+ *
+ * 예전엔 밝기 버튼이 머리줄에 늘 떠 있어서 그 컴포넌트가 구독을 들고 있었다.
+ * 버튼이 설정 화면 안으로 들어가면서 그 자리가 없어졌다 — 그대로 두면
+ * 홈·뉴스를 보는 동안 OS 가 다크로 바뀌어도 화면이 안 따라온다.
+ *
+ * `index.html` 의 인라인 스크립트는 **첫 페인트 한 번**을 맡는다. 여기는
+ * 그 뒤로 계속 따라가는 몫이라 서로 자리가 다르다 — 규칙(three→two 로 푸는 법)은
+ * 여전히 applyTheme 한 곳에만 적혀 있다.
+ */
+export function startThemeSync(): () => void {
+  applyTheme(loadTheme());
+  return watchSystemTheme(() => {
+    // 그때그때 저장된 값을 다시 읽는다 — 설정 화면에서 바뀌어 있을 수 있다.
+    if (loadTheme() === "system") applyTheme("system");
+  });
+}

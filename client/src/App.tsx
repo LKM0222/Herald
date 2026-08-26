@@ -97,6 +97,13 @@ export default function App() {
         sample={briefing?.sample}
         date={date === today ? undefined : date}
         launchpad={briefing?.launchpad}
+        /*
+          여백을 뷰가 직접 드는 건 **뉴스 본문이 실제로 그려질 때뿐**이다 —
+          아래 BriefingView 가 <News/> 를 내주는 바로 그 조건이다.
+          탭만 보고 넘기면, 같은 탭에서 기다리는 표시·안내 상자가 대신 설 때
+          그것들까지 여백 0 이 되어 화면 왼쪽 위 모서리에 붙는다.
+        */
+        bleed={view === "news" && briefing !== null}
       >
         {view === "settings" ? (
           <Settings

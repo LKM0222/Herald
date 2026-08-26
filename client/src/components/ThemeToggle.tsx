@@ -1,12 +1,6 @@
 import { useEffect, useState } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
-import {
-  applyTheme,
-  loadTheme,
-  saveTheme,
-  watchSystemTheme,
-  type Theme,
-} from "../lib/theme";
+import { applyTheme, loadTheme, saveTheme, type Theme } from "../lib/theme";
 
 const OPTIONS = [
   { id: "light", label: "라이트", Icon: Sun },
@@ -15,17 +9,20 @@ const OPTIONS = [
 ] as const satisfies readonly { id: Theme; label: string; Icon: unknown }[];
 
 /**
+ * 밝기 세 칸. 설정 → 겉모습 구획의 **제목 오른쪽 끝**에 붙는다 (Settings.tsx).
+ *
  * 상태를 자기 안에 들고 있다. 실제 반영은 DOM 속성이라
  * 최상단까지 끌어올려 내려꽂을 이유가 없다.
+ *
+ * ⚠ OS 설정을 쫓아가는 구독은 여기 없다. 이 버튼은 설정 화면에서만 살아 있는데,
+ *   따라가는 일은 어느 탭을 보고 있든 계속 돌아야 해서 main.tsx 의
+ *   startThemeSync 로 올렸다. 여기서 또 구독하면 같은 규칙이 두 벌이 된다.
  */
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>(loadTheme);
 
   useEffect(() => {
     applyTheme(theme);
-    // 시스템을 따를 때만 OS 설정 변화를 쫓아간다.
-    if (theme !== "system") return;
-    return watchSystemTheme(() => applyTheme("system"));
   }, [theme]);
 
   return (

@@ -1,5 +1,6 @@
 import {
   Archive,
+  Bookmark,
   CalendarDays,
   House,
   Newspaper,
@@ -10,8 +11,17 @@ import {
 /**
  * 탭 정의는 한 곳에만 둔다 — PC 사이드바와 모바일 하단바가 같은 배열을 읽는다.
  * 두 벌로 두면 한쪽만 고쳐서 어긋난다.
+ *
+ * 두 벌인 것은 **순서뿐이다** (DESKTOP_TABS · MOBILE_TABS). 두 배열은 아이디만
+ * 늘어놓고, 이름·아이콘·준비 여부는 아래 VIEWS 한 곳에서만 온다.
  */
-export type ViewId = "home" | "news" | "archive" | "schedule" | "settings";
+export type ViewId =
+  | "home"
+  | "news"
+  | "archive"
+  | "stash"
+  | "schedule"
+  | "settings";
 
 export type ViewDef = {
   id: ViewId;
@@ -21,30 +31,58 @@ export type ViewDef = {
   ready: boolean;
 };
 
+/**
+ * 화면 등록부. **탭 줄 자체가 아니다** — 누가 줄에 서고 어떤 순서인지는
+ * 아래 두 배열이 정한다.
+ *
+ * 설정도 여기 있다. 탭 줄에서는 빠졌지만(머리줄의 톱니로 갔다) `?v=settings` 는
+ * 그대로 살아 있어야 해서 findView 가 찾을 수 있는 자리에 남는다.
+ */
 export const VIEWS: ViewDef[] = [
   { id: "home", Icon: House, label: "홈", ready: true },
   { id: "news", Icon: Newspaper, label: "뉴스", ready: true },
-  { id: "archive", Icon: Archive, label: "지난 기록", ready: false },
   { id: "schedule", Icon: CalendarDays, label: "일정", ready: true },
+  { id: "archive", Icon: Archive, label: "지난 기록", ready: false },
+  { id: "stash", Icon: Bookmark, label: "담아둔 것", ready: false },
   { id: "settings", Icon: SettingsIcon, label: "설정", ready: true },
+];
+
+/** PC 좌측 레일 순서. 홈이 맨 위다 — 넓은 화면에선 위에서 아래로 읽는다. */
+export const DESKTOP_TABS: ViewId[] = [
+  "home",
+  "news",
+  "schedule",
+  "archive",
+  "stash",
 ];
 
 /**
  * 모바일 하단바 순서. 홈이 정중앙(3/5)에 오도록 재배치한다 —
- * 엄지가 가장 편하게 닿는 자리다. PC 사이드바는 VIEWS 순서 그대로 쓴다.
+ * 엄지가 가장 편하게 닿는 자리다. PC 사이드바는 DESKTOP_TABS 순서를 쓴다.
  */
-export const MOBILE_ORDER: ViewId[] = [
+export const MOBILE_TABS: ViewId[] = [
   "news",
-  "archive",
-  "home",
   "schedule",
-  "settings",
+  "home",
+  "archive",
+  "stash",
 ];
+
+/**
+ * 탭 줄에서 빠져 머리줄로 올라간 화면. 모바일·PC 양쪽에서 같은 자리에 선다 —
+ * 하루에 한 번 열까 말까 한 것이 엄지가 가장 편한 다섯 칸 중 하나를 먹고 있었다.
+ */
+export const HEADER_VIEW: ViewId = "settings";
 
 export const DEFAULT_VIEW: ViewId = "home";
 
 export function findView(id: string): ViewDef | undefined {
   return VIEWS.find((view) => view.id === id);
+}
+
+/** 순서 배열(아이디)을 정의로 편다. 두 탭 줄이 같은 등록부를 읽게 하는 다리다. */
+export function tabsIn(order: ViewId[]): ViewDef[] {
+  return order.map((id) => findView(id)!);
 }
 
 /**

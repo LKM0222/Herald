@@ -38,6 +38,7 @@ import {
   savePalette,
   type PaletteId,
 } from "../lib/palette";
+import { ThemeToggle } from "../components/ThemeToggle";
 import {
   Button,
   Field,
@@ -136,7 +137,15 @@ function Section({
   );
 }
 
-/** 색조를 고른다. 밝기(라이트·다크)는 헤더에 있고 여기선 색만 다룬다. */
+/**
+ * 겉모습 — **두 축을 한 화면에서 다룬다.** 밝기(라이트·다크·시스템)는 제목 오른쪽,
+ * 색조(팔레트 여섯)는 그 아래.
+ *
+ * ⚠ 둘을 헷갈리지 않게 자리와 이름으로 갈라 둔다. 밝기는 제목줄에 붙은 세 칸짜리
+ *   토글이고, 색조는 본문에 세로로 늘어선 여섯 줄이다. 위아래로 나란히 쌓으면
+ *   "다크" 와 "네이비" 가 한 눈금의 이웃처럼 읽히는데, 실제로는 다른 축이라
+ *   여섯 색조 × 두 밝기 = 열두 조합이 나온다.
+ */
 function AppearanceSection() {
   const [palette, setPalette] = useState<PaletteId>(loadPalette);
 
@@ -148,10 +157,22 @@ function AppearanceSection() {
     <Section
       id="appearance"
       title="겉모습"
-      note="고른 팔레트는 이 브라우저에 저장돼요. 밝기는 헤더에서 바꾸고, 시스템에 맡기면 OS 설정을 따라갑니다."
+      note="밝기와 색조는 따로 고릅니다. 둘 다 이 브라우저에 저장되고, 밝기를 시스템에 맡기면 OS 설정을 따라가요."
+      /*
+        뉴스 소스 구획이 태그를 다는 그 자리다 (Section 의 aside).
+        좁은 화면에선 Section 의 flex-wrap 이 제목 아래로 접어 주는데, 그때는
+        이 덩어리가 줄의 맨 앞에 서므로 왼쪽 정렬이 맞다 — 라벨만 오른쪽에
+        떠 있으면 버튼과 어긋나 보인다. 접히지 않는 폭에서만 오른쪽 끝에 붙인다.
+      */
+      aside={
+        <div className="flex shrink-0 flex-col items-start gap-1.5 sm:items-end">
+          <Kicker>밝기</Kicker>
+          <ThemeToggle />
+        </div>
+      }
     >
       <div className="flex flex-col gap-2">
-        <Kicker>색상 팔레트</Kicker>
+        <Kicker>색조 팔레트</Kicker>
         {PALETTES.map((option) => {
           const selected = option.id === palette;
           return (

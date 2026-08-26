@@ -25,6 +25,16 @@ export type SettingsResult = Result<{
 }>;
 
 /**
+ * 답이 없는 요청을 여기서 끊는다.
+ *
+ * fetch 는 스스로 포기하지 않는다. 서버가 연결만 받아 두고 아무 말도 안 하면
+ * 약속이 영영 안 풀리고, 화면은 그 사이 계속 "기다리는 중" 으로 돈다 —
+ * 사용자가 볼 수 있는 건 영원히 도는 원뿐이고 다시 시도할 길도 없다.
+ * 끊어서 실패로 만들어야 화면이 사유를 말하고 버튼을 내준다.
+ */
+const TIMEOUT_MS = 20_000;
+
+/**
  * 모든 요청의 공통 처리.
  * 브라우저는 "서버가 꺼짐 · 주소 오타 · CORS 차단"을 구분해 알려주지 않아서
  * 셋 다 unreachable 로 온다 — 화면에서 세 가능성을 함께 안내한다.
@@ -36,6 +46,7 @@ async function request(
 ): Promise<Response | Failure> {
   try {
     const response = await fetch(`${config.apiBase}${path}`, {
+      signal: AbortSignal.timeout(TIMEOUT_MS),
       ...init,
       headers: {
         Authorization: `Bearer ${config.token}`,
@@ -49,6 +60,14 @@ async function request(
     }
     return response;
   } catch (error) {
+    // 시간이 다 된 것과 못 닿은 것은 사용자가 할 일이 다르다. 브라우저가 주는
+    // "signal timed out" 을 그대로 내보내면 무슨 말인지 알 수 없다.
+    if (error instanceof Error && error.name === "TimeoutError") {
+      return {
+        kind: "unreachable",
+        message: `서버가 ${TIMEOUT_MS / 1000}초 안에 답하지 않았어요`,
+      };
+    }
     return {
       kind: "unreachable",
       message: error instanceof Error ? error.message : "연결 실패",

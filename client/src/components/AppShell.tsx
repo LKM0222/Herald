@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 import type { LaunchItem } from "@shared/types";
+import { useLoading } from "../lib/loading";
 import { hrefFor, MOBILE_ORDER, VIEWS, type ViewDef, type ViewId } from "../lib/views";
 import { Launchpad } from "./Launchpad";
+import { LoadingBar, TabSpinner } from "./Loading";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
 import { Tag } from "./ui";
@@ -26,6 +28,12 @@ export function AppShell({
   children: ReactNode;
 }) {
   const mobileViews = MOBILE_ORDER.map((id) => VIEWS.find((v) => v.id === id)!);
+  /*
+    이 탭이 제 데이터를 기다리는 중인지 (lib/loading.tsx).
+    show 는 250ms 를 넘긴 뒤에야 켜진다 — 눈 깜빡할 사이에 끝나는 요청까지
+    진행선을 켜면 나타났다 사라지는 번쩍임만 남는다.
+  */
+  const { show: loading } = useLoading();
 
   return (
     /*
@@ -70,7 +78,13 @@ export function AppShell({
         {/* 사이드바 — PC 전용. 고정이라 md:min-h-0 을 안 주고 shrink-0 만 둔다 */}
         <nav className="hidden w-44 shrink-0 flex-col gap-0.5 border-r border-line py-4 md:flex">
           {VIEWS.map((item) => (
-            <NavItem key={item.id} item={item} current={view} date={date} />
+            <NavItem
+              key={item.id}
+              item={item}
+              current={view}
+              date={date}
+              loading={loading}
+            />
           ))}
 
           {/* 도면 3A 대로 런치패드가 내비 아래에 붙는다. 좁은 화면 몫은 홈이 맡는다. */}
@@ -82,34 +96,50 @@ export function AppShell({
         </nav>
 
         {/*
-          본문 — lg 미만에선 이 <main> 자체가 하나의 스크롤 영역이다. lg 부터는
-          각 뷰가 내부에서 본문·스트립을 SCROLL_PANE(ui.tsx)으로 따로 쪼개고,
-          그땐 이 높이에 정확히 맞춰 들어가 있어서(align-items:stretch) 이 main
-          자체는 넘칠 게 없어져 스크롤바가 저절로 사라진다.
+          진행선을 걸 기준칸. <main> 자체에 걸면 선이 본문과 같이 굴러 올라가고,
+          셸 바깥에 걸면 좌측 레일 폭(md 이상 176px)을 손으로 빼줘야 한다.
+          여기 한 겹을 두면 두 도면이 저절로 맞는다 — 레일이 없는 좁은 화면에선
+          머리줄 바로 아래 전체 폭(도면 9B), 레일이 서는 넓은 화면에선
+          가운데 칸 위쪽(도면 8B).
 
-          ⚠ items-start 가 반드시 lg 미만에 있어야 한다. 이 main 은 flex 컨테이너(가로)
-            라서 기본값 align-items:stretch 가 뷰 루트의 **높이를 main 의 높이로
-            못박는다.** 그러면 진짜 내용은 루트 상자 밖으로 흘러나가고, 상자 밖으로
-            나간 것에는 스크롤 컨테이너의 아래 여백(pb-10)이 안 붙는다 —
-            마지막 요소가 하단 탭바에 0px 로 딱 붙어 버린다(실측: 40px → 0.3px).
-            "브리핑이 없어요" 같은 안내 상자도 화면 높이만큼 늘어난다.
-            lg 부터는 반대로 stretch 여야 SCROLL_PANE 이 굴러서 다시 켠다.
+          ⚠ 이 칸은 크기를 정하기만 하고 <main> 의 클래스는 한 글자도 안 건드린다.
+            items-start · min-h-0 · min-w-0 가 <main> 에서 빠지면 아래 여백 40px 이
+            통째로 사라진다 (d63e24b). 실측으로도 진행선이 떠 있을 때와 없을 때
+            <main> 의 위치·크기가 완전히 같다.
         */}
-        <main
-          data-scrollarea
-          className={`flex min-h-0 min-w-0 flex-1 items-start overflow-y-auto lg:items-stretch ${
-            view === "news"
-              ? /*
-                   뉴스 탭만 예외다. 층마다 화면을 통째로 차지하며 스냅하는데
-                   (News.tsx), 여백이 여기 있으면 스냅 지점이 그만큼 밀려
-                   칸이 화면에 딱 맞지 않는다 — 여백은 칸이 각자 든다 (도면 5A · 6B).
-                */
-                "px-0"
-              : "px-4 pt-5 pb-10 sm:px-6"
-          }`}
-        >
-          {children}
-        </main>
+        <div className="relative flex min-h-0 min-w-0 flex-1">
+          {loading ? <LoadingBar /> : null}
+
+          {/*
+            본문 — lg 미만에선 이 <main> 자체가 하나의 스크롤 영역이다. lg 부터는
+            각 뷰가 내부에서 본문·스트립을 SCROLL_PANE(ui.tsx)으로 따로 쪼개고,
+            그땐 이 높이에 정확히 맞춰 들어가 있어서(align-items:stretch) 이 main
+            자체는 넘칠 게 없어져 스크롤바가 저절로 사라진다.
+
+            ⚠ items-start 가 반드시 lg 미만에 있어야 한다. 이 main 은 flex 컨테이너(가로)
+              라서 기본값 align-items:stretch 가 뷰 루트의 **높이를 main 의 높이로
+              못박는다.** 그러면 진짜 내용은 루트 상자 밖으로 흘러나가고, 상자 밖으로
+              나간 것에는 스크롤 컨테이너의 아래 여백(pb-10)이 안 붙는다 —
+              마지막 요소가 하단 탭바에 0px 로 딱 붙어 버린다(실측: 40px → 0.3px).
+              "브리핑이 없어요" 같은 안내 상자도 화면 높이만큼 늘어난다.
+              lg 부터는 반대로 stretch 여야 SCROLL_PANE 이 굴러서 다시 켠다.
+          */}
+          <main
+            data-scrollarea
+            className={`flex min-h-0 min-w-0 flex-1 items-start overflow-y-auto lg:items-stretch ${
+              view === "news"
+                ? /*
+                     뉴스 탭만 예외다. 층마다 화면을 통째로 차지하며 스냅하는데
+                     (News.tsx), 여백이 여기 있으면 스냅 지점이 그만큼 밀려
+                     칸이 화면에 딱 맞지 않는다 — 여백은 칸이 각자 든다 (도면 5A · 6B).
+                  */
+                  "px-0"
+                : "px-4 pt-5 pb-10 sm:px-6"
+            }`}
+          >
+            {children}
+          </main>
+        </div>
       </div>
 
       {/*
@@ -121,7 +151,13 @@ export function AppShell({
       */}
       <nav className="flex shrink-0 border-t border-line bg-surface md:hidden">
         {mobileViews.map((item) => (
-          <TabItem key={item.id} item={item} current={view} date={date} />
+          <TabItem
+            key={item.id}
+            item={item}
+            current={view}
+            date={date}
+            loading={loading}
+          />
         ))}
       </nav>
     </div>
@@ -133,13 +169,17 @@ function NavItem({
   item,
   current,
   date,
+  loading,
 }: {
   item: ViewDef;
   current: ViewId;
   date?: string;
+  /** 지금 탭이 제 데이터를 기다리는 중인지 */
+  loading: boolean;
 }) {
   const active = item.id === current;
   const { Icon } = item;
+  const waiting = active && loading;
   const className = `flex min-h-10 items-center gap-2.5 border-l-2 px-4 text-sm ${
     active
       ? "border-accent bg-accent-soft font-medium text-accent"
@@ -152,13 +192,24 @@ function NavItem({
     <>
       <Icon size={16} strokeWidth={1.5} aria-hidden="true" />
       {item.label}
+      {/* 레일은 자리가 남아서 아이콘을 그대로 두고 오른쪽 끝에 원을 덧붙인다
+          (도면 8A · 8B). 좁은 화면의 하단 탭은 자리가 없어 아이콘을 갈아 끼운다. */}
+      {waiting ? (
+        <span className="ml-auto">
+          <TabSpinner size={14} />
+        </span>
+      ) : null}
     </>
   );
 
   return (
     <>
       {item.ready ? (
-        <a href={hrefFor(item.id, date)} className={className}>
+        <a
+          href={hrefFor(item.id, date)}
+          className={className}
+          aria-busy={waiting || undefined}
+        >
           {body}
         </a>
       ) : (
@@ -177,13 +228,17 @@ function TabItem({
   item,
   current,
   date,
+  loading,
 }: {
   item: ViewDef;
   current: ViewId;
   date?: string;
+  /** 지금 탭이 제 데이터를 기다리는 중인지 */
+  loading: boolean;
 }) {
   const active = item.id === current;
   const { Icon } = item;
+  const waiting = active && loading;
   // 5등분이라 한 칸이 좁다. 라벨을 줄이지 않고 글자만 작게 둔다.
   const className = `flex min-h-14 flex-1 flex-col items-center justify-center gap-1 ${
     active ? "text-accent" : item.ready ? "text-dim" : "text-dim opacity-40"
@@ -191,13 +246,26 @@ function TabItem({
 
   const body = (
     <>
-      <Icon size={18} strokeWidth={1.5} aria-hidden="true" />
+      {/*
+        아이콘을 도는 원으로 **갈아 끼운다** (도면 9B). 덧붙이지 않는 이유는
+        한 칸이 5등분이라 자리가 없어서다 — 320px 에선 한 칸이 64px 뿐이다.
+        원도 18px 이라 줄 높이가 그대로다.
+      */}
+      {waiting ? (
+        <TabSpinner size={18} />
+      ) : (
+        <Icon size={18} strokeWidth={1.5} aria-hidden="true" />
+      )}
       <span className="text-[10px] leading-none">{item.label}</span>
     </>
   );
 
   return item.ready ? (
-    <a href={hrefFor(item.id, date)} className={className}>
+    <a
+      href={hrefFor(item.id, date)}
+      className={className}
+      aria-busy={waiting || undefined}
+    >
       {body}
     </a>
   ) : (

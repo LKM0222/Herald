@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { formatKoreanDate, isISODate, todayISO } from "@shared/date";
 import { AppShell } from "./components/AppShell";
+import {
+  LoadingPanel,
+  LoadingProvider,
+  StageReport,
+} from "./components/Loading";
 import { Button, LinkButton } from "./components/ui";
 import { Setup } from "./Setup";
 import { Home } from "./views/Home";
@@ -9,6 +14,7 @@ import { ScheduleView } from "./views/ScheduleView";
 import { Settings } from "./views/Settings";
 import { fetchBriefing, type BriefingResult } from "./lib/api";
 import { clearConfig, loadConfig, type Config } from "./lib/config";
+import { useLoading } from "./lib/loading";
 import { hrefFor, viewFromLocation, type ViewId } from "./lib/views";
 
 /**
@@ -65,35 +71,51 @@ export default function App() {
   const briefing = result?.kind === "ok" ? result.briefing : null;
 
   return (
-    <AppShell
-      view={view}
-      dateLabel={formatKoreanDate(date)}
-      note={
-        briefing?.generatedAt
-          ? `${briefing.generatedAt} 에 정리했어요`
-          : undefined
-      }
-      sample={briefing?.sample}
-      date={date === today ? undefined : date}
-      launchpad={briefing?.launchpad}
-    >
-      {view === "settings" ? (
-        <Settings
-          config={config}
-          onReconnect={reconnect}
-          onConfigChanged={() => setConfig(loadConfig())}
-        />
-      ) : (
-        <BriefingView
-          view={view}
-          result={result}
-          date={date}
-          today={today}
-          config={config}
-          onReconnect={reconnect}
-        />
-      )}
-    </AppShell>
+    /*
+      기다리는 표시는 셸(진행선 · 탭)과 가운데 칸 두 군데에 나뉘어 뜨는데,
+      "지금 무엇을 기다리는가" 는 한 곳에서만 정해져야 한다 — 두 벌로 두면
+      진행선은 도는데 가운데는 다 왔다고 말하는 상태가 생긴다.
+    */
+    <LoadingProvider view={view}>
+      {/*
+        브리핑 대기는 이 컴포넌트가 들고 있어서 여기서 신고한다.
+        ⚠ 설정 탭은 브리핑을 아예 안 받는다 (위 useEffect 가 그냥 돌아간다).
+          그 탭까지 "기다리는 중" 으로 세면 진행선이 영영 안 꺼진다.
+      */}
+      <StageReport
+        stage="briefing"
+        busy={view !== "settings" && result === null}
+      />
+      <AppShell
+        view={view}
+        dateLabel={formatKoreanDate(date)}
+        note={
+          briefing?.generatedAt
+            ? `${briefing.generatedAt} 에 정리했어요`
+            : undefined
+        }
+        sample={briefing?.sample}
+        date={date === today ? undefined : date}
+        launchpad={briefing?.launchpad}
+      >
+        {view === "settings" ? (
+          <Settings
+            config={config}
+            onReconnect={reconnect}
+            onConfigChanged={() => setConfig(loadConfig())}
+          />
+        ) : (
+          <BriefingView
+            view={view}
+            result={result}
+            date={date}
+            today={today}
+            config={config}
+            onReconnect={reconnect}
+          />
+        )}
+      </AppShell>
+    </LoadingProvider>
   );
 }
 
@@ -114,9 +136,7 @@ function BriefingView({
   config: Config;
   onReconnect: () => void;
 }) {
-  if (result === null) {
-    return <Status title="불러오는 중이에요">서버에서 브리핑을 가져오고 있어요.</Status>;
-  }
+  if (result === null) return <LoadingCenter />;
 
   if (result.kind === "unreachable") {
     return (
@@ -187,6 +207,20 @@ function BriefingView({
       config={config}
     />
   );
+}
+
+/**
+ * 브리핑이 없으면 화면에 그릴 게 아무것도 없다. 그 자리에 지금 어느 단계인지를
+ * 보여준다 (도면 8B · 9B 의 가운데 칸).
+ *
+ * ⚠ 250ms 를 못 넘기면 **아무것도 안 그린다.** 눈 깜빡할 사이에 끝나는 요청에
+ *   안내 상자를 띄웠다 지우면 그 자리가 한 번 덜컥이는데, 그게 잠깐의 빈 칸보다
+ *   훨씬 거슬린다.
+ */
+function LoadingCenter() {
+  const { stages, show } = useLoading();
+  if (!show) return null;
+  return <LoadingPanel stages={stages} />;
 }
 
 function Status({

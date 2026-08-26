@@ -30,6 +30,7 @@ import type {
   SecretStatus,
 } from "@shared/types";
 import { saveConfig, type Config } from "../lib/config";
+import { useReportStage } from "../lib/loading";
 import {
   applyPalette,
   loadPalette,
@@ -214,6 +215,14 @@ function SourcesSection({ config }: { config: Config }) {
       cancelled = true;
     };
   }, [config]);
+
+  /*
+    셸의 진행선이 읽는 값 (lib/loading.tsx). 설정 탭의 세 구획이 각자 신고하고
+    하나라도 돌고 있으면 도는 중이다.
+    ⚠ 실패도 끝난 것으로 센다 — error 가 차면 화면에 사유가 뜨므로, 여기서까지
+      기다리는 중으로 두면 진행선만 영영 돈다.
+  */
+  useReportStage("settings", enabled === null && error === null);
 
   /**
    * 소스든 시각이든 저장은 한 곳으로 모은다.
@@ -468,6 +477,9 @@ function SummarySection({ config }: { config: Config }) {
     };
   }, [config]);
 
+  // 진행선용 신고. 실패(message)도 끝난 것으로 센다 — SourcesSection 주석 참고.
+  useReportStage("settings", statuses === null && message === null);
+
   const anthropic = statuses?.find((item) => item.name === "anthropic");
 
   async function submit(next: string) {
@@ -627,6 +639,9 @@ function CalendarSection({ config }: { config: Config }) {
     };
   }, [config]);
 
+  // 진행선용 신고. 실패(message)도 끝난 것으로 센다 — SourcesSection 주석 참고.
+  useReportStage("settings", subscriptions === null && message === null);
+
   const naverId = legacy?.find((item) => item.name === "naver_id");
   const naverPassword = legacy?.find((item) => item.name === "naver_password");
   const hasLegacy = Boolean(naverId?.set || naverPassword?.set);
@@ -724,11 +739,16 @@ function CalendarSection({ config }: { config: Config }) {
         <div className="flex flex-col gap-2">
           <Kicker>연결된 캘린더</Kicker>
 
-          {subscriptions === null ? (
+          {/*
+            ⚠ message 를 같이 본다. 목록을 못 받아오면 subscriptions 가 null 로
+              남는데, 그것만 보면 사유가 위에 떠 있는데도 이 칸은 영영
+              "불러오는 중" 으로 돈다. 실패는 기다림이 아니다.
+          */}
+          {subscriptions === null && message === null ? (
             <div className="rounded-xl border border-line px-4 py-4 text-sm text-dim">
               불러오는 중이에요…
             </div>
-          ) : connected ? (
+          ) : subscriptions && connected ? (
             <ul className="flex flex-col gap-2">
               {subscriptions.map((item) => (
                 <li

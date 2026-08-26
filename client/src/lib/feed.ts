@@ -7,6 +7,7 @@ import {
 } from "./api";
 import type { CalendarEvent } from "@shared/types";
 import type { Config } from "./config";
+import { useReportStage } from "./loading";
 
 /**
  * 캘린더에서 실제로 읽어온 일정.
@@ -57,6 +58,17 @@ export function useCalendarFeed(
       cancelled = true;
     };
   }, [config, from, to, reloadKey]);
+
+  /*
+    셸의 진행선과 탭 표시가 읽는 값 (lib/loading.tsx). 여기서 신고하는 이유는
+    이 훅이 **실제로 기다리는 자리**여서다 — 화면 쪽에서 따로 세면 요청이 하나
+    늘 때마다 두 곳을 고쳐야 하고, 한쪽만 고치면 화면이 거짓말을 한다.
+
+    일정 탭은 이 훅을 두 번 부른다(보는 달 · 이번 주). 둘 다 같은 단계로 신고하고
+    하나라도 돌고 있으면 도는 중이다. 실패해도 state 가 error 로 바뀌니
+    "기다리는 중" 에 갇히지 않는다.
+  */
+  useReportStage("calendar", feed.state === "loading");
 
   return feed;
 }

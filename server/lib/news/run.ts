@@ -32,10 +32,26 @@ export type RunResult =
     }
   | { ok: false; reason: string; ms: number };
 
-export async function runBriefing(date: string): Promise<RunResult> {
+export type RunOptions = {
+  /**
+   * 이미 요약한 기사도 다시 요약한다.
+   *
+   * ⚠ **자동 실행(scheduler)은 절대 이걸 켜지 않는다.** 켜면 어제 본 기사가
+   *   매일 다시 올라오고 토큰도 매일 다시 나간다. 손으로 부를 때만 쓴다 —
+   *   프롬프트를 바꾼 결과를 같은 기사로 견주거나, 하루치 전체 비용을 잴 때다.
+   */
+  includeSummarized?: boolean;
+};
+
+export async function runBriefing(
+  date: string,
+  options: RunOptions = {},
+): Promise<RunResult> {
   const started = Date.now();
 
-  const collected = await pending();
+  const collected = await pending({
+    includeSummarized: options.includeSummarized,
+  });
   const { items } = collected;
 
   /* 요약보다 먼저 남긴다. 요약이 실패한 날에도 "무엇을 모았는지" 가 남아야

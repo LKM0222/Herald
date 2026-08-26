@@ -217,8 +217,13 @@ export function News({
  * 딱 끊어 들어온다 — 어디까지 봤는지가 스크롤 위치가 아니라 화면 자체로 남는다.
  *
  * 실제로 걸리는 규칙(높이 · 스냅 · 떠오르는 애니메이션)은 index.css 의
- * `.news-panel` 에 있다. 위아래 여백만 여기서 준다 — 좌우는 AppShell 의
- * `<main>` 이 이미 대고 있어서 여기서 또 대면 두 겹이 된다.
+ * `.news-panel` 에 있다.
+ *
+ * ⚠ **여백은 네 방향 다 여기서 준다** (도면 5A · 6B: 20px 24px 24px / 20px 16px 24px).
+ *   `<main>` 에 두면 안 된다 — 위아래 여백이 스냅 지점을 밀어서 칸이 화면에
+ *   딱 안 맞는다. 그래서 `<main>` 을 px-0 으로 비웠는데, 그때 좌우까지 같이
+ *   비어 버려 층 제목이 화면 왼쪽 끝에 붙고 카드가 4px 밖으로 나갔다.
+ *   한쪽만 옮기면 안 되는 짝이다.
  *
  * ⚠ shrink-0 — 이 칸들은 세로 flex 자식이다. 없으면 형제 칸에 눌려
  *   min-height 아래로 찌그러지고, 그 순간 "한 칸 = 한 화면" 이 깨진다.
@@ -238,7 +243,7 @@ function SnapPanel({
       위를 맞춰 두면 층이 바뀌어도 시선이 한자리에 선다.
     */
     <section
-      className={`news-panel flex shrink-0 flex-col ${
+      className={`news-panel flex shrink-0 flex-col px-4 sm:px-6 ${
         first ? "gap-5 pb-6 pt-5" : "gap-3.5 py-6"
       }`}
     >

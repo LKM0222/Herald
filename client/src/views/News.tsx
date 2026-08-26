@@ -30,10 +30,20 @@ import { hrefFor } from "../lib/views";
  * 20건을 같은 카드에 평평하게 늘어놓으면 아무것도 안 읽는다.
  * 주제별로 묶지 않는 이유: 아침에 필요한 건 분류가 아니라 순서다.
  */
-const TIERS: { priority: Priority; no: string; label: string }[] = [
-  { priority: 1, no: "01", label: "먼저 볼 것" },
-  { priority: 2, no: "02", label: "훑어볼 것" },
-  { priority: 3, no: "03", label: "참고" },
+const TIERS: {
+  priority: Priority;
+  no: string;
+  label: string;
+  /**
+   * 날짜줄의 건수 요약에 쓰는 짧은 이름 (도면 6B: "먼저 2 · 훑어 2 · 참고 2").
+   * 층 이름을 두 벌 적는 게 아니라 **같은 층의 긴 이름 옆에 짧은 이름을 하나 더**
+   * 둔 것이다 — 층이 늘거나 이름이 바뀌면 여기 한 줄만 고친다.
+   */
+  short: string;
+}[] = [
+  { priority: 1, no: "01", label: "먼저 볼 것", short: "먼저" },
+  { priority: 2, no: "02", label: "훑어볼 것", short: "훑어" },
+  { priority: 3, no: "03", label: "참고", short: "참고" },
 ];
 
 /**
@@ -443,14 +453,21 @@ function Score({ value }: { value?: number }) {
 }
 
 /**
- * 스크롤 영역 위에 붙박이로 서는 날짜 줄 (도면 5A).
+ * 스크롤 영역 위에 붙박이로 서는 날짜 줄 (도면 5A · 6B).
  *
  * 무엇을 보고 있는지(날짜)와 오늘 몇 건인지(층별 건수)를 한 줄에 둔다.
  * 칸을 넘길 때마다 헤더가 바뀌지 않으니, 지금 몇 층인지는 도트가 말하고
  * **어느 날 기사인지**는 여기가 계속 말한다.
  *
- * ⚠ 모바일에는 없다 (도면 6B). 좁은 화면에선 앱 헤더가 이미 같은 날짜를
- *   달고 있어서 두 줄이 같은 말을 반복한다.
+ * ⚠ 예전엔 md 미만에서 통째로 숨겼다 — "앱 헤더가 이미 날짜를 달고 있어서
+ *   같은 말을 두 번 한다" 는 이유였는데, 도면 6B 는 좁은 화면에도 이 줄을
+ *   그린다. 머리줄의 날짜와 여기 날짜는 **다른 말이다**: 머리줄은 "오늘이
+ *   며칠인가", 여기는 "지금 보고 있는 기사가 어느 날 것인가" 다. 둘이 갈리는
+ *   순간(지난 날짜를 열었을 때)이 정확히 이 줄이 필요한 순간이고,
+ *   숨겨 뒀던 탓에 **폰에서는 날짜를 옮길 방법이 아예 없었다.**
+ *
+ * ⚠ 스크롤 영역 **밖**의 붙박이 행이다 (칩 줄과 같다). 안에 넣으면 층을
+ *   굴릴 때 같이 흘러가고, 스냅 지점도 이 줄 높이만큼 어긋난다.
  */
 function DateBar({
   date,
@@ -459,15 +476,17 @@ function DateBar({
 }: {
   date: string;
   today: string;
-  tiers: { priority: Priority; label: string; items: NewsItem[] }[];
+  tiers: { priority: Priority; label: string; short: string; items: NewsItem[] }[];
 }) {
   return (
-    <div className="hidden shrink-0 items-center justify-between gap-3 border-b border-line px-6 py-3 md:flex">
-      <span className="flex min-w-0 items-baseline gap-2.5">
-        <span className="whitespace-nowrap font-display text-[15px] font-semibold">
+    // 좌우 여백은 칩 줄과 같은 값을 쓴다 (px-4 sm:px-6) — 두 붙박이 행의 글이 세로로 맞는다
+    <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-4 py-2 sm:px-6 md:py-3">
+      {/* 좁은 화면에선 날짜와 건수가 세로로 쌓이고, sm 부터 한 줄로 눕는다 */}
+      <span className="flex min-w-0 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2.5">
+        <span className="truncate font-display text-[15px] font-semibold">
           {formatKoreanDate(date)} 기사
         </span>
-        <span className="hidden whitespace-nowrap text-xs text-dim lg:inline">
+        <span className="truncate text-xs text-dim">
           {tiers.map((tier, index) => (
             <span key={tier.priority}>
               {index > 0 ? " · " : ""}
@@ -481,7 +500,14 @@ function DateBar({
                       : ""
                 }
               >
-                {tier.label} {tier.items.length}
+                {/*
+                  같은 층을 좁은 화면에선 짧게 부른다 (도면 6B "먼저 2 · 훑어 2 · 참고 2").
+                  건수는 한 번만 적고 이름만 갈아 끼운다 — 숫자를 두 벌 적으면
+                  한쪽만 고쳐서 어긋난다.
+                */}
+                <span className="lg:hidden">{tier.short}</span>
+                <span className="hidden lg:inline">{tier.label}</span>{" "}
+                {tier.items.length}
               </span>
             </span>
           ))}
@@ -492,7 +518,12 @@ function DateBar({
         <DayStep to={shiftISO(date, -1)} label="하루 전">
           <ChevronLeft size={15} strokeWidth={1.5} />
         </DayStep>
-        <span className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-[13px] text-mid">
+        {/*
+          날짜 알약. 좁은 화면에선 숨긴다 — 왼쪽 제목이 이미 같은 날짜를 말하고
+          있고, 320px 에서 이것까지 세우면 제목이 밀려 잘린다 (실측).
+          누르는 것이 아니라 읽는 것이라 44px 규칙의 대상이 아니다.
+        */}
+        <span className="hidden min-h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-[13px] text-mid sm:inline-flex">
           <CalendarDays size={14} strokeWidth={1.5} aria-hidden="true" />
           {date}
         </span>
@@ -514,8 +545,12 @@ function DayStep({
   label: string;
   children: ReactNode;
 }) {
+  /*
+    size-11(44px) — 이 줄이 폰에도 서면서 손가락으로 누르는 것이 됐다 (CLAUDE.md).
+    md 부터는 마우스로 겨누므로 도면대로 32px 로 되돌린다.
+  */
   const shape =
-    "inline-flex size-8 items-center justify-center rounded-lg border border-line text-mid";
+    "inline-flex size-11 items-center justify-center rounded-lg border border-line text-mid md:size-8";
   if (!to) {
     return (
       <span className={`${shape} opacity-35`} aria-hidden="true">

@@ -50,9 +50,20 @@
           root.dataset.theme = dark ? "dark" : "light";
           root.style.colorScheme = dark ? "dark" : "light";
 
+          // lib/palette.ts 의 PALETTES 와 같은 목록이다. 팔레트를 늘릴 때
+          // 여기도 같이 늘린다 — 빠뜨리면 첫 페인트만 charcoal 로 번쩍이고
+          // React 가 붙는 순간 제 색으로 바뀐다.
+          var palettes = [
+            "charcoal",
+            "mono",
+            "navy",
+            "forest",
+            "terracotta",
+            "cobalt",
+          ];
           var palette = localStorage.getItem("herald.palette");
           root.dataset.palette =
-            palette === "mono" || palette === "navy" ? palette : "charcoal";
+            palettes.indexOf(palette) >= 0 ? palette : "charcoal";
         } catch (_) {
           // 저장소가 막혀 있어도 앱은 떠야 한다. 기본값으로 간다.
           root.dataset.theme = "light";

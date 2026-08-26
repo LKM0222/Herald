@@ -2,7 +2,7 @@
 
 /*
  * 색은 두 축으로 갈린다 — 밝기(data-theme)와 색조(data-palette).
- * 값의 출처는 lib/palette.ts 주석 참고. 여섯 조합을 전부 적어 둔다.
+ * 값의 출처는 lib/palette.ts 주석 참고. 여섯 색조 × 두 밝기, 열두 조합을 전부 적어 둔다.
  *
  * 시스템 해석은 JS 가 하고 CSS 는 결론만 받는다 (theme.ts 주석 참고).
  * 그래서 여기엔 prefers-color-scheme 이 없다.
@@ -80,6 +80,78 @@
   --divider: #253141;
   --neutral-600: #8a9099;
   --neutral-700: #a6acb4;
+}
+
+/* ── Forest ──────────────────────────────────────────────── */
+:root[data-palette="forest"] {
+  --bg: #f4f3ed;
+  --text: #26352d;
+  --surface: #ffffff;
+  --accent: #718c5a;
+  --accent-100: #ecf1e9;
+  --accent-700: #5a7047;
+  --divider: #dde0d9;
+  --neutral-600: #89938b;
+  --neutral-700: #6f7870;
+}
+:root[data-palette="forest"][data-theme="dark"] {
+  --bg: #0a1811;
+  --text: #ecebe4;
+  --surface: #13231b;
+  --accent: #829c6c;
+  --accent-100: #262824;
+  --accent-700: #abbf9a;
+  --divider: #21342a;
+  --neutral-600: #89938b;
+  --neutral-700: #a6b0a8;
+}
+
+/* ── Terracotta ──────────────────────────────────────────── */
+:root[data-palette="terracotta"] {
+  --bg: #f5efe7;
+  --text: #292624;
+  --surface: #fffcf8;
+  --accent: #c96b4b;
+  --accent-100: #fbebe6;
+  --accent-700: #9d5036;
+  --divider: #e4d9cd;
+  --neutral-600: #91857a;
+  --neutral-700: #766b60;
+}
+:root[data-palette="terracotta"][data-theme="dark"] {
+  --bg: #171412;
+  --text: #ede7de;
+  --surface: #211e1c;
+  --accent: #d97d5e;
+  --accent-100: #2e2522;
+  --accent-700: #eba38b;
+  --divider: #322e2b;
+  --neutral-600: #968e86;
+  --neutral-700: #b4aba3;
+}
+
+/* ── Cobalt ──────────────────────────────────────────────── */
+:root[data-palette="cobalt"] {
+  --bg: #f6f7f9;
+  --text: #181a1f;
+  --surface: #ffffff;
+  --accent: #4267d5;
+  --accent-100: #e8efff;
+  --accent-700: #314fa9;
+  --divider: #dee1e7;
+  --neutral-600: #747985;
+  --neutral-700: #5a5f6b;
+}
+:root[data-palette="cobalt"][data-theme="dark"] {
+  --bg: #13151a;
+  --text: #eeeff1;
+  --surface: #1d1f25;
+  --accent: #638bf8;
+  --accent-100: #232731;
+  --accent-700: #97b5ff;
+  --divider: #2c2f36;
+  --neutral-600: #8c9099;
+  --neutral-700: #a8adb7;
 }
 
 @theme inline {

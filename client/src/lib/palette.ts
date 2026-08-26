@@ -6,10 +6,21 @@
  *
  * 값은 디자인 문서(Herald 레이아웃 재구성)의 6개 시안에서 그대로 가져왔다.
  * 여기가 원본이고 CSS 는 이 표를 옮겨 적은 것이다 — 한쪽만 고치지 않는다.
+ *
+ * 뒤의 세 벌(forest·terracotta·cobalt)은 라이트 값만 받았고 다크는 앞의 세 벌에서
+ * 읽어낸 규칙으로 유도했다 — 다크 배경은 라이트 본문색을 oklch L 19.5% 로 내린 것,
+ * 다크 본문색은 라이트 배경을 L −2.5 한 것, 강조는 max(L+5.5, 66%). 자세한 건
+ * index.css 옆의 값과 같이 본다.
  */
 const STORAGE_KEY = "herald.palette";
 
-export type PaletteId = "charcoal" | "mono" | "navy";
+export type PaletteId =
+  | "charcoal"
+  | "mono"
+  | "navy"
+  | "forest"
+  | "terracotta"
+  | "cobalt";
 
 export type PaletteInfo = {
   id: PaletteId;
@@ -37,6 +48,24 @@ export const PALETTES: PaletteInfo[] = [
     name: "Navy & Cream",
     note: "짙은 네이비에 금빛 강조. 밤에 보기 편해요",
     swatch: ["#F8F5ED", "#FFFFFF", "#E6E0D0", "#C89B3C"],
+  },
+  {
+    id: "forest",
+    name: "Forest",
+    note: "옅은 회녹색 바탕에 세이지 그린을 포인트로만 써요",
+    swatch: ["#F4F3ED", "#FFFFFF", "#DDE0D9", "#718C5A"],
+  },
+  {
+    id: "terracotta",
+    name: "Terracotta",
+    note: "따뜻한 베이지 바탕에 테라코타 한 점. 오래 봐도 눈이 편해요",
+    swatch: ["#F5EFE7", "#FFFCF8", "#E4D9CD", "#C96B4B"],
+  },
+  {
+    id: "cobalt",
+    name: "Cobalt",
+    note: "차가운 무채색에 강렬한 코발트 블루. 여섯 중 대비가 가장 셉니다",
+    swatch: ["#F6F7F9", "#FFFFFF", "#DEE1E7", "#4267D5"],
   },
 ];
 

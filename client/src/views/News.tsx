@@ -899,9 +899,14 @@ function LeadCard({
 /**
  * 2·3층 행 끝의 아이콘 버튼 하나. 담아두기와 원문이 **같은 상자**를 쓴다 —
  * 둘이 나란히 서는데 크기나 모서리가 다르면 그게 먼저 눈에 띈다.
+ *
+ * ⚠ **테두리 색은 여기 없다.** 둘이 다른 색을 쓰기 때문이다(도면 10A: 담아두기는
+ *   회색, 원문은 강조색). border-line 을 여기 넣고 쓰는 쪽에서 border-accent 로
+ *   덮으려 하면 Tailwind 는 클래스를 적은 순서가 아니라 **생성된 CSS 순서**로
+ *   이기고 지는 걸 정한다 — 어느 쪽이 이길지 매번 확인하게 된다. 색은 각자 준다.
  */
 const ROW_ACTION =
-  "flex size-10 shrink-0 items-center justify-center rounded-[10px] border border-line";
+  "flex size-10 shrink-0 items-center justify-center rounded-[10px] border";
 
 /**
  * 2층 — 한 줄짜리 행.
@@ -939,6 +944,10 @@ function SkimList({ items }: { items: NewsItem[] }) {
               40px 로 키운 건 CLAUDE.md 가 조밀한 컨트롤도 40px 밑으로 내리지
               말라고 못박아 뒀고, 이건 폰에서 누르는 것이어서다.
 
+              둘의 색이 다른 것도 도면대로다 — 원문만 강조색이고 담아두기는
+              회색이다. 이 줄에서 실제로 할 수 있는 일이 하나뿐이라 그게 눈에
+              띄어야 한다.
+
               ⚠ 담아두기는 **아직 아무 일도 하지 않는다.** disabled 로 두는
                 이유가 그거다 — 눌렀는데 반응이 없는 버튼이 제일 나쁘다.
                 흐린 정도(45%)는 1층 버튼 줄의 PendingButton 과 같은 값이라
@@ -948,7 +957,7 @@ function SkimList({ items }: { items: NewsItem[] }) {
               type="button"
               disabled
               title="담아두기 — 다음 단계에서 연결됩니다"
-              className={`${ROW_ACTION} cursor-not-allowed text-mid opacity-45`}
+              className={`${ROW_ACTION} cursor-not-allowed border-line text-mid opacity-45`}
             >
               <Bookmark size={16} strokeWidth={1.5} aria-hidden="true" />
             </button>
@@ -957,7 +966,7 @@ function SkimList({ items }: { items: NewsItem[] }) {
               target="_blank"
               rel="noreferrer noopener"
               title={`${item.headline ?? item.title} 원문 열기`}
-              className={`${ROW_ACTION} text-mid hover:bg-fg/[0.07] hover:text-accent active:bg-fg/[0.14]`}
+              className={`${ROW_ACTION} border-accent text-accent hover:bg-accent/10 active:bg-accent/20`}
             >
               <ExternalLink size={16} strokeWidth={1.5} aria-hidden="true" />
             </a>

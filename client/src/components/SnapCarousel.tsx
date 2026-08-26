@@ -214,7 +214,13 @@ export function SnapCarousel({
     <>
       <div
         ref={trackRef}
-        className={`relative -mx-1 flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+        /*
+          ⚠ scroll-px-1 은 px-1 과 **짝**이다. 없으면 스냅이 카드를 패딩 안쪽이
+            아니라 테두리에 붙이려 해서 트랙이 4px 스크롤된 채로 선다 —
+            카드가 왼쪽으로 4px 치우쳐 좌우 여백이 12 / 20 으로 어긋난다.
+            (-mx-1 px-1 은 카드 그림자·포커스 링이 잘리지 않게 두는 여유다)
+        */
+        className={`relative -mx-1 flex snap-x snap-mandatory scroll-px-1 gap-4 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
           // 넘길 게 없으면 잡히는 척하지 않는다
           count > 1 ? "cursor-grab" : ""
         } ${

@@ -19,6 +19,7 @@ import {
   Search,
 } from "lucide-react";
 import { NewsImage } from "../components/NewsImage";
+import { StandInNotice } from "../components/StandIn";
 import { SnapCarousel } from "../components/SnapCarousel";
 import { Kicker, LinkButton, PendingButton, Tag } from "../components/ui";
 import { hrefFor } from "../lib/views";
@@ -237,6 +238,16 @@ export function News({
 }) {
   useVerticalSnap();
 
+  /*
+    오늘 것이 아직 없어서 **대신** 나온 브리핑인가.
+
+    이때 URL 의 날짜(오늘)와 실제로 담긴 기사의 날짜(어제)가 갈라진다.
+    화면에 적는 날짜는 언제나 **기사 쪽**이어야 한다 — 오늘 날짜를 이고
+    어제 기사를 늘어놓으면 그게 거짓말이 된다.
+  */
+  const standIn = briefing.standInFor ?? null;
+  const shown = standIn ? briefing.date : date;
+
   const [pick, setPick] = useState<Pick>("all");
   const visible = pickNews(briefing.news, pick);
 
@@ -297,7 +308,15 @@ export function News({
      * 통째로 무너진다. 예전엔 md 부터만이었다 — 그 아래선 문서가 굴렀다.
      */
     <div className="flex h-full w-full min-w-0 flex-col">
-      <DateBar date={date} today={today} tiers={byTier} />
+      {/*
+        latest 로 shown 을 주면 "하루 뒤" 가 막힌다. 대신 나온 상태에서
+        앞으로 가면 오늘 날짜로 갔다가 다시 어제 것이 뜬다 — 눌렀는데
+        같은 화면이 나오는 버튼이 된다.
+      */}
+      <DateBar date={shown} latest={standIn ? shown : today} tiers={byTier} />
+      {standIn ? (
+        <StandInNotice shown={shown} className="border-b border-line px-4 py-2 sm:px-6" />
+      ) : null}
       {/*
         칩 줄도 스크롤 밖이다 — 날짜줄과 같은 이유로 붙박이 행이다.
         기사가 아예 없는 날엔 고를 것이 없으니 줄 자체를 안 세운다.
@@ -482,11 +501,12 @@ function Score({ value }: { value?: number }) {
  */
 function DateBar({
   date,
-  today,
+  latest,
   tiers,
 }: {
   date: string;
-  today: string;
+  /** 앞으로 갈 수 있는 마지막 날. 대개 오늘이지만, 대신 나온 날엔 그 날짜다 */
+  latest: string;
   tiers: { priority: Priority; label: string; short: string; items: NewsItem[] }[];
 }) {
   /*
@@ -575,7 +595,7 @@ function DateBar({
           {date}
         </span>
         {/* 내일 기사는 없다. 오늘이면 앞으로 가는 길을 막는다 */}
-        <DayStep to={date < today ? shiftISO(date, 1) : null} label="하루 뒤">
+        <DayStep to={date < latest ? shiftISO(date, 1) : null} label="하루 뒤">
           <ChevronRight size={15} strokeWidth={1.5} />
         </DayStep>
       </div>

@@ -4,6 +4,7 @@ import type { Briefing, NewsItem } from "@shared/types";
 import { Bookmark, ExternalLink, Search, Zap } from "lucide-react";
 import { Launchpad } from "../components/Launchpad";
 import { SnapCarousel } from "../components/SnapCarousel";
+import { StandInNotice } from "../components/StandIn";
 import { Kicker, LinkButton, PendingButton, SCROLL_PANE } from "../components/ui";
 import {
   eventLabel,
@@ -70,6 +71,11 @@ export function Home({
           내비가 이미 말해주므로 여기선 작은 라벨 하나로 충분하다.
         */}
         <Kicker>오늘의 Herald</Kicker>
+
+        {/* 오늘 것이 아직 없어 어제 것이 올라온 날. 하루 중 아침 전에만 나온다 */}
+        {briefing.standInFor ? (
+          <StandInNotice shown={briefing.date} className="rounded-xl px-3 py-2" />
+        ) : null}
 
         <LeadCarousel leads={leads} total={briefing.news.length} date={date} />
 

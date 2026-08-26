@@ -1,13 +1,22 @@
 import { shiftISO, todayISO, weekdayIndex } from "@shared/date";
 import type { Briefing } from "@shared/types";
-import { loadBriefing } from "./store";
+import { loadBriefing, savedDates } from "./store";
 
 /**
  * 브리핑 한 건을 가져온다. 없으면 null.
  *
  * 실제로 만들어진 게 있으면 그걸 준다 — 자동 실행(scheduler.ts)이 저장해 둔 것이다.
- * 없으면 **오늘 날짜에 한해** 더미를 준다. 자동 실행을 아직 안 켰거나 켠 첫날
- * 아침이 되기 전이면 저장된 게 없는데, 그때 빈 화면을 주면 앱이 고장 난 것처럼 보인다.
+ *
+ * 오늘 것이 없으면 **가장 최근에 만들어진 것**을 대신 준다. 자동 실행은 아침에
+ * 도는데(기본 08:30) 한국 날짜는 자정에 넘어간다 — 그 사이 여덟 시간 반 동안
+ * 오늘 것은 없다. 그때 빈 화면을 주면 어제 읽던 것마저 사라지고, 더미를 주면
+ * 가짜 기사가 그 자리를 차지한다. 어제 것을 그대로 두는 쪽이 둘 다보다 낫다.
+ *
+ * ⚠ 대신 나온 것에는 standInFor 가 붙는다. 화면이 그걸 드러내야
+ *   어제 기사를 오늘 기사로 읽지 않는다. date 는 안 건드린다 —
+ *   그 값이 곧 "화면에 뭐라고 적을 날짜" 다.
+ *
+ * 한 번도 안 돌았을 때만 더미다. 그때는 대신 줄 것 자체가 없다.
  *
  * ⚠ 더미에는 sample: true 가 붙어 있다. 화면이 그걸 드러내야
  *   "오늘 뉴스가 이것뿐인가" 로 잘못 읽히지 않는다.
@@ -17,6 +26,15 @@ export async function getBriefing(date: string): Promise<Briefing | null> {
   if (saved) return saved;
 
   if (date !== todayISO()) return null;
+
+  /* savedDates() 는 최신순이라 첫 번째로 걸리는 게 바로 전날치다.
+     어제가 비어 있어도(서버가 꺼져 있던 날) 그 앞으로 계속 거슬러 간다. */
+  const previous = savedDates().find((day) => day < date);
+  if (previous) {
+    const older = loadBriefing(previous);
+    if (older) return { ...older, standInFor: date };
+  }
+
   return {
     ...SAMPLE,
     date,

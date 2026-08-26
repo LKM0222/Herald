@@ -88,7 +88,12 @@ export default function App() {
       />
       <AppShell
         view={view}
-        dateLabel={formatKoreanDate(date)}
+        /*
+          머리줄의 날짜는 **실제로 담긴 기사의 날짜**다. 오늘 것이 아직 없어
+          어제 것이 대신 올라온 날, 여기가 오늘을 이고 있으면 뉴스 화면의
+          날짜 줄과 서로 다른 날을 말한다 — 둘 중 하나는 반드시 거짓말이다.
+        */
+        dateLabel={formatKoreanDate(briefing?.standInFor ? briefing.date : date)}
         note={
           briefing?.generatedAt
             ? `${briefing.generatedAt} 에 정리했어요`

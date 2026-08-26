@@ -29,9 +29,9 @@ export function AppShell({
 
   return (
     /*
-     * app-shell-frame(index.css) 이 md 이상에서만 높이를 뷰포트에 고정하고
-     * overflow:hidden 을 건다 — 그 아래는 지금처럼 페이지 전체가 스크롤된다.
-     * 헤더는 이 틀의 평범한 flex 자식이라 저절로 붙박이가 된다.
+     * app-shell-frame(index.css) 이 **모든 폭에서** 높이를 뷰포트에 고정하고
+     * overflow:hidden 을 건다. 헤더와 하단 탭바는 이 틀의 평범한 flex 자식이라
+     * 저절로 붙박이가 되고, 가운데 <main> 만 구른다 (도면 6A~6D).
      */
     <div className="app-shell-frame mx-auto flex w-full max-w-[1152px] flex-1 flex-col">
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6">
@@ -62,10 +62,11 @@ export function AppShell({
         </div>
       </header>
 
-      {/* md 이상에서 이 줄 자체가 남은 높이를 다 차지해야(min-h-0) 아래 main 의
-          overflow-y-auto 가 실제로 넘친다 — 없으면 flex 자식은 내용 높이 밑으로
-          못 줄어들어 바깥 틀의 overflow:hidden 이 그냥 잘라먹는다. */}
-      <div className="flex flex-1 md:min-h-0">
+      {/* 이 줄이 남은 높이를 다 차지해야(min-h-0) 아래 main 의 overflow-y-auto 가
+          실제로 넘친다 — 없으면 flex 자식은 내용 높이 밑으로 못 줄어들어
+          바깥 틀의 overflow:hidden 이 그냥 잘라먹는다.
+          도면 6A~6D 대로 이제 모든 폭에서 그렇다. 예전엔 md 부터만이었다. */}
+      <div className="flex min-h-0 flex-1">
         {/* 사이드바 — PC 전용. 고정이라 md:min-h-0 을 안 주고 shrink-0 만 둔다 */}
         <nav className="hidden w-44 shrink-0 flex-col gap-0.5 border-r border-line py-4 md:flex">
           {VIEWS.map((item) => (
@@ -90,25 +91,29 @@ export function AppShell({
         */}
         <main
           data-scrollarea
-          className={`min-w-0 flex-1 px-4 sm:px-6 md:flex md:min-h-0 md:overflow-y-auto ${
+          className={`flex min-h-0 min-w-0 flex-1 overflow-y-auto ${
             view === "news"
               ? /*
                    뉴스 탭만 예외다. 층마다 화면을 통째로 차지하며 스냅하는데
-                   (News.tsx), 위아래 여백이 여기 있으면 스냅 지점이 그만큼
-                   밀려 칸이 화면에 딱 맞지 않는다 — 여백은 칸이 각자 든다.
-                   ⚠ 아래쪽 탭바 몫은 남긴다. 0 으로 두면 스크롤이 마지막 칸의
-                     스냅 지점까지 닿지 못해 그 칸이 탭바 뒤에 깔린 채 멈춘다.
+                   (News.tsx), 여백이 여기 있으면 스냅 지점이 그만큼 밀려
+                   칸이 화면에 딱 맞지 않는다 — 여백은 칸이 각자 든다 (도면 5A · 6B).
                 */
-                "pb-[var(--news-tabbar)] md:pb-0"
-              : "pb-24 pt-5 md:pb-10"
+                "px-0"
+              : "px-4 pt-5 pb-10 sm:px-6"
           }`}
         >
           {children}
         </main>
       </div>
 
-      {/* 하단 탭바 — 모바일 전용. 홈이 정중앙에 온다 */}
-      <nav className="fixed inset-x-0 bottom-0 z-10 flex border-t border-line bg-surface md:hidden">
+      {/*
+        하단 탭바 — 모바일 전용. 홈이 정중앙에 온다.
+        ⚠ fixed 가 아니라 셸의 붙박이 자식이다(도면 6A~6D). fixed 였을 땐 본문이
+          탭바 뒤로 흘러서 아래 여백(pb-24)으로 피해 줘야 했고, 그 여백이
+          뉴스 탭 스냅 지점을 밀어 칸이 화면에 안 맞았다. 자리를 차지하게 두면
+          <main> 높이에서 애초에 빠져 그 계산이 전부 사라진다.
+      */}
+      <nav className="flex shrink-0 border-t border-line bg-surface md:hidden">
         {mobileViews.map((item) => (
           <TabItem key={item.id} item={item} current={view} date={date} />
         ))}

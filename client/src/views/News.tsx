@@ -22,9 +22,9 @@ const TIERS: { priority: Priority; no: string; label: string }[] = [
 /**
  * 세로 스냅을 켜는 표시를 `<html>` 에 달았다 뗀다.
  *
- * 스냅은 **구르는 요소**에 걸어야 하는데 이 앱은 폭에 따라 구르는 놈이
- * 바뀐다 — md 이상은 `<main>`, 그 아래는 문서 자체다(index.css 의
- * app-shell-frame 주석). JSX 로는 `<html>` 에 손이 닿지 않아 여기서 단다.
+ * 스냅이 걸릴 곳은 `<main>` 하나지만, 표시는 `<html>` 에 단다 — CSS 가
+ * `.news-snap main[data-scrollarea]` 로 잡기 때문이고, JSX 로는 `<html>` 에
+ * 손이 닿지 않아 여기서 달았다 뗀다.
  *
  * 뉴스 탭에서만 켜는 이유: scroll-snap-align 은 가로·세로를 한꺼번에 정하는
  * 속성이라, 문서에 세로 스냅을 상시로 걸면 홈의 가로 캐러셀 카드(snap-start)가
@@ -39,15 +39,13 @@ function useVerticalSnap() {
 }
 
 /**
- * 스크롤 컨테이너를 찾는다 — md 이상은 `<main>`, 그 아래는 문서다.
+ * 스냅이 걸린 스크롤 컨테이너 — 언제나 <main data-scrollarea> 다.
  *
- * 폭으로 갈라 짐작하지 않고 "정말 넘치는 쪽" 을 고른다. 브레이크포인트를
- * 두 곳에 적어 두면 한쪽만 고쳐지는 날이 온다.
+ * 예전엔 폭에 따라 문서일 수도 있어서 "정말 넘치는 쪽" 을 골라야 했다.
+ * 셸이 모든 폭에서 뷰포트 높이에 고정된 뒤로는 구르는 놈이 하나뿐이다.
  */
 function scrollerFor(root: HTMLElement | null): HTMLElement | null {
-  const pane = root?.closest<HTMLElement>("[data-scrollarea]");
-  if (pane && pane.scrollHeight > pane.clientHeight) return pane;
-  return document.scrollingElement as HTMLElement | null;
+  return root?.closest<HTMLElement>("[data-scrollarea]") ?? null;
 }
 
 /**
@@ -75,11 +73,7 @@ function useActiveTier(
       const panels = [
         ...(root.current?.querySelectorAll<HTMLElement>(".news-panel") ?? []),
       ];
-      // 문서가 구를 땐 스크롤포트 꼭대기가 곧 화면 꼭대기(0)다.
-      const portTop =
-        scroller === document.scrollingElement
-          ? 0
-          : scroller.getBoundingClientRect().top;
+      const portTop = scroller.getBoundingClientRect().top;
       let nearest = 0;
       let best = Infinity;
       panels.forEach((panel, index) => {
@@ -92,12 +86,9 @@ function useActiveTier(
       setActive(nearest);
     };
 
-    // 문서 스크롤은 scrollingElement 가 아니라 window 로 올라온다.
-    const target: EventTarget =
-      scroller === document.scrollingElement ? window : scroller;
-    target.addEventListener("scroll", read, { passive: true });
+    scroller.addEventListener("scroll", read, { passive: true });
     read();
-    return () => target.removeEventListener("scroll", read);
+    return () => scroller.removeEventListener("scroll", read);
   }, [root, count]);
 
   return active;
@@ -140,12 +131,12 @@ export function News({
 
   return (
     /*
-     * md:h-full — PC 에서 칸 높이(.news-panel 의 min-height:100%)가 풀리려면
-     * 이 뿌리가 확정된 높이를 들고 있어야 한다. 퍼센트는 "높이가 정해진 조상"
-     * 을 찾아 올라가는데, 여기서 auto 로 끊기면 칸이 내용 높이로 주저앉아
-     * 스냅이 통째로 무너진다.
+     * h-full — 칸 높이(.news-panel 의 min-height:100%)가 풀리려면 이 뿌리가
+     * 확정된 높이를 들고 있어야 한다. 퍼센트는 "높이가 정해진 조상" 을 찾아
+     * 올라가는데, 여기서 auto 로 끊기면 칸이 내용 높이로 주저앉아 스냅이
+     * 통째로 무너진다. 예전엔 md 부터만이었다 — 그 아래선 문서가 굴렀다.
      */
-    <div ref={rootRef} className="flex w-full min-w-0 flex-col md:h-full">
+    <div ref={rootRef} className="flex h-full w-full min-w-0 flex-col">
       {briefing.news.length === 0 ? (
         <SnapPanel first>
           <Kicker>오늘 볼 것</Kicker>
@@ -263,11 +254,10 @@ function SnapPanel({
  * 말하는데, 이 화면에서 알고 싶은 건 거리가 아니라 **몇 층 중 몇 번째냐** 다.
  * 도트가 그 셋을 그대로 그린다. 홈의 가로 캐러셀 도트와 같은 문법을 세로로 세운 것.
  *
- * ⚠ fixed 다. 스크롤되는 <main> 안에 absolute 로 넣으면 내용과 같이 흘러가고,
- *   AppShell 을 쪼개 relative 껍데기를 새로 두르면 홈·일정까지 영향을 받는다.
- * ⚠ right 의 max() — 껍데기가 max-w-[1152px] 로 가운데 서 있어서, 창이 그보다
- *   넓어지면 화면 오른쪽 끝이 아니라 껍데기 오른쪽 끝에 붙어야 한다.
- *   1152/2 = 576, 거기서 12px 안쪽 → 564.
+ * ⚠ absolute 인데 <main> 안에 있어도 같이 흘러가지 않는다. 기준(containing
+ *   block)이 .app-shell-frame 이라 <main> 의 overflow 바깥이기 때문이다.
+ *   예전엔 fixed + right:max(12px, calc(50% - 564px)) 로 창 폭을 손계산했는데,
+ *   틀이 relative 를 갖게 되면서 도면대로 right:12px 하나면 끝난다.
  */
 function TierDots({
   tiers,
@@ -283,7 +273,7 @@ function TierDots({
 
   return (
     <div
-      className="fixed top-1/2 z-10 flex -translate-y-1/2 flex-col items-center gap-2 right-[max(12px,calc(50%-564px))]"
+      className="absolute right-3 top-1/2 z-10 flex -translate-y-1/2 flex-col items-center gap-2"
       role="tablist"
       aria-label="뉴스 층"
     >

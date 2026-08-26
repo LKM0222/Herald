@@ -84,6 +84,21 @@ const QUOTA: Record<Area, { tier1: number; tier2: number; tier3: number; deep: n
   general: { tier1: 3, tier2: 6, tier3: 8, deep: 2 },
 };
 
+/**
+ * 1차 호출의 출력 상한. **건수에 따라 늘린다.**
+ *
+ * ⚠ 고정 4,000 이었다가 개발 영역 60건에서 잘렸다. 한 건이 id(16자) + 점수 +
+ *   한국어 표제(15~30자) + 주제라 대략 60 토큰이고, 60건이면 3,600 이다.
+ *   거기에 전체 headline 까지 얹히면 4,000 을 넘는다. **경계에서 조용히
+ *   깨지는 값을 상수로 두면 안 된다** — 그날 기사가 몇 건인지에 달려 있다.
+ *
+ * 넉넉히 잡아도 손해가 작다. 출력은 실제로 쓴 만큼만 과금되고, 상한은
+ * 천장일 뿐이다. 16,000 은 모델 한계에 걸리지 않게 둔 뚜껑이다.
+ */
+function triageBudget(count: number): number {
+  return Math.min(16_000, 1_500 + count * 140);
+}
+
 function capFor(area: Area, priority: Priority): number {
   const q = QUOTA[area];
   return priority === 1 ? q.tier1 : priority === 2 ? q.tier2 : q.tier3;
@@ -232,10 +247,21 @@ async function summarizeArea(
       system: triageSystem(area),
       user: triagePrompt(items),
       tool: TRIAGE_TOOL,
-      maxTokens: 4_000,
+      maxTokens: triageBudget(items.length),
     });
     add(usage, call.usage);
     triage = readTriage(call.input, items);
+
+    /* ⚠ **잘렸는데 조용히 넘어가면 안 된다.** 도구 호출이 max_tokens 에 걸리면
+       블록은 오는데 배열이 중간에서 끊긴다. headline 이 schema 상 앞에 있어서
+       그것만 멀쩡히 오고 picks 가 비어 화면에 0건이 뜬다 — 실패로 보이지도
+       않는다. 실제로 개발 60건에서 이 일이 났다(4,000 토큰이 모자랐다). */
+    if (call.stopReason === "max_tokens") {
+      notes.push(
+        `${AREAS.find((one) => one.id === area)?.label ?? area} 채점이 출력 상한에 잘렸습니다 · ` +
+          `${items.length}건 중 ${triage.picks.length}건만 받았습니다`,
+      );
+    }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     return { ok: false, message: detail };
@@ -531,7 +557,7 @@ class ApiError extends Error {
   }
 }
 
-type Call = { input: Record<string, unknown>; usage: Usage };
+type Call = { input: Record<string, unknown>; usage: Usage; stopReason: string };
 
 async function ask(
   key: string,
@@ -601,6 +627,7 @@ async function ask(
 
   return {
     input: block.input as Record<string, unknown>,
+    stopReason: body.stop_reason ?? "",
     usage: {
       input: body.usage?.input_tokens ?? 0,
       output: body.usage?.output_tokens ?? 0,

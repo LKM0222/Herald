@@ -256,6 +256,19 @@ async function summarizeArea(
        블록은 오는데 배열이 중간에서 끊긴다. headline 이 schema 상 앞에 있어서
        그것만 멀쩡히 오고 picks 가 비어 화면에 0건이 뜬다 — 실패로 보이지도
        않는다. 실제로 개발 60건에서 이 일이 났다(4,000 토큰이 모자랐다). */
+    /* ⚠ **빈 결과를 조용히 넘기지 않는다.** 한 영역이 0건이면 화면에서 그 탭이
+       통째로 사라지는데, 원인이 넷이나 된다 — 모델이 아무것도 안 골랐거나,
+       전부 문턱 밑이거나, 없는 id 를 적었거나, 출력이 잘렸거나. 어느 쪽인지
+       적어두지 않으면 다음 날 같은 일이 나도 또 처음부터 찾아야 한다. */
+    if (triage.picks.length === 0) {
+      const d = triage.dropped;
+      notes.push(
+        `${AREAS.find((one) => one.id === area)?.label ?? area} 채점 결과가 비었습니다 · ` +
+          `모델이 적은 것 ${d.total}건 (문턱 ${FLOOR} 미달 ${d.belowFloor} · 모르는 id ${d.unknownId} · ` +
+          `최저점 ${d.lowest}) · stop_reason ${call.stopReason || "?"}`,
+      );
+    }
+
     if (call.stopReason === "max_tokens") {
       notes.push(
         `${AREAS.find((one) => one.id === area)?.label ?? area} 채점이 출력 상한에 잘렸습니다 · ` +
@@ -640,7 +653,15 @@ async function ask(
 // ── 응답 읽기 ────────────────────────────────────────────
 
 type Pick = { id: string; score: number; headline: string; topic: string };
-type Triage = { headline: string; picks: Pick[] };
+type Triage = {
+  headline: string;
+  picks: Pick[];
+  /**
+   * 걸러낸 내역. **화면이 빈 이유를 말할 수 있어야 한다.**
+   * 예전엔 picks 가 비면 그냥 0건이 떴고, 실패로 보이지도 않아 원인을 못 찾았다.
+   */
+  dropped: { total: number; unknownId: number; belowFloor: number; lowest: number };
+};
 
 /**
  * 도구를 강제해도 **id 는 모델이 적는 값이다.** 없는 id 를 지어내거나
@@ -650,17 +671,28 @@ function readTriage(input: Record<string, unknown>, items: NewsItem[]): Triage {
   const known = new Set(items.map((item) => item.id));
   const taken = new Set<string>();
   const picks: Pick[] = [];
+  const raws = Array.isArray(input.picks) ? input.picks : [];
+  let unknownId = 0;
+  let belowFloor = 0;
+  let lowest = Number.POSITIVE_INFINITY;
 
-  for (const one of Array.isArray(input.picks) ? input.picks : []) {
+  for (const one of raws) {
     const id = (one as { id?: unknown })?.id;
     const raw = (one as { score?: unknown })?.score;
     const topic = (one as { topic?: unknown })?.topic;
-    if (typeof id !== "string" || !known.has(id) || taken.has(id)) continue;
+    if (typeof id !== "string" || !known.has(id) || taken.has(id)) {
+      unknownId += 1;
+      continue;
+    }
 
     const score = typeof raw === "number" ? Math.round(raw) : Number.NaN;
+    if (Number.isFinite(score)) lowest = Math.min(lowest, score);
     /* 점수가 없거나 문턱 밑이면 버린다. 0 으로 때우면 화면에 올라온다 —
        모델이 실수로 낮은 점수를 적어 보낸 것을 통과시키면 안 된다. */
-    if (!Number.isFinite(score) || score < FLOOR) continue;
+    if (!Number.isFinite(score) || score < FLOOR) {
+      belowFloor += 1;
+      continue;
+    }
 
     const head = (one as { headline?: unknown })?.headline;
     taken.add(id);
@@ -675,7 +707,16 @@ function readTriage(input: Record<string, unknown>, items: NewsItem[]): Triage {
   }
 
   const headline = typeof input.headline === "string" ? input.headline.trim() : "";
-  return { headline, picks };
+  return {
+    headline,
+    picks,
+    dropped: {
+      total: raws.length,
+      unknownId,
+      belowFloor,
+      lowest: Number.isFinite(lowest) ? lowest : -1,
+    },
+  };
 }
 
 type Brief = { id: string; headline: string; summary: string; relevance: string };

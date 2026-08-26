@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { formatKoreanDate, formatRelative, shiftISO } from "@shared/date";
-import type { Briefing, NewsItem, Priority } from "@shared/types";
+import { AREA_IDS, type Area, type Briefing, type NewsItem, type Priority } from "@shared/types";
+import { AREAS } from "@shared/sources";
 import {
   Bookmark,
   CalendarDays,
@@ -10,6 +11,7 @@ import {
   ExternalLink,
   Search,
 } from "lucide-react";
+import { NewsImage } from "../components/NewsImage";
 import { SnapCarousel } from "../components/SnapCarousel";
 import { Kicker, LinkButton, PendingButton, Tag } from "../components/ui";
 import { hrefFor } from "../lib/views";
@@ -26,6 +28,112 @@ const TIERS: { priority: Priority; no: string; label: string }[] = [
   { priority: 2, no: "02", label: "훑어볼 것" },
   { priority: 3, no: "03", label: "참고" },
 ];
+
+/**
+ * 칩 하나가 고르는 값. `"all"` 은 영역이 아니라 **안 거른 상태**다.
+ *
+ * 도면 7A 는 그날 실제로 붙은 topic 을 칩으로 늘어놓지만, 우리는 7B 쪽 —
+ * 고정된 영역 다섯 칸 — 을 쓴다. 자리가 손에 기억되고, 어제 본 칩이 오늘
+ * 사라지지 않는다. 대신 빈 영역이 생기는데 그건 숨기지 않고 그대로 보여준다.
+ */
+type Pick = "all" | Area;
+
+/**
+ * 영역이 없는 항목은 개발로 읽는다.
+ *
+ * ⚠ `area` 는 선택형이다 (shared/types.ts). 영역이 생기기 전 브리핑에는 필드가
+ *   아예 없고, 그때는 전부 개발 뉴스였다. 수집이 아직 이 값을 안 채우는 동안은
+ *   **모든 기사가 개발로 보이는 게 정상**이다 — 고장이 아니다.
+ */
+function areaOf(item: NewsItem): Area {
+  return item.area ?? "dev";
+}
+
+/**
+ * 고른 칩에 맞게 기사를 추린다.
+ *
+ * ⚠ **"전체" 에서 점수로 다시 정렬하지 않는다.** 점수는 영역 안에서만 뜻이 있다 —
+ *   영역마다 다른 기준으로 매긴 값이라 개발 88 과 경제 88 은 견줄 수 없다
+ *   (shared/types.ts 의 score 주석). 그래서 영역 순서대로 **이어 붙이기만** 하고,
+ *   각 영역 안에서는 서버가 준 순서(층 → 점수)를 그대로 둔다.
+ *   한 번이라도 flat 하게 sort 하면 서로 다른 자로 잰 값을 나란히 세우게 된다.
+ */
+function pickNews(news: NewsItem[], pick: Pick): NewsItem[] {
+  if (pick !== "all") return news.filter((item) => areaOf(item) === pick);
+  return AREA_IDS.flatMap((id) => news.filter((item) => areaOf(item) === id));
+}
+
+/**
+ * 영역 칩 줄 (도면 6B · 7A).
+ *
+ * ⚠ **스크롤 영역 밖의 붙박이 줄이다.** 안에 두면 층을 굴릴 때 같이 흘러가
+ *   사라진다 — 화면을 바꾸는 컨트롤이 화면을 바꿨다고 없어지면 안 된다.
+ *   도면에서도 층이 01 → 02 → 03 으로 넘어가는 내내 이 줄은 제자리에 있다.
+ *
+ * ⚠ 좁은 화면에선 다섯 칸이 한 줄에 안 들어간다(320px 기준 실측). 줄바꿈 대신
+ *   **가로로 굴린다** — 도면 6B 가 그렇고, 줄바꿈은 이 붙박이 줄의 높이를
+ *   들쭉날쭉하게 만들어 아래 스냅 칸 높이까지 같이 흔든다.
+ *   굴리는 건 이 띠 안쪽뿐이라 페이지가 가로로 넘치지는 않는다.
+ */
+function AreaChips({
+  news,
+  pick,
+  onPick,
+}: {
+  news: NewsItem[];
+  pick: Pick;
+  onPick: (next: Pick) => void;
+}) {
+  const chips: { id: Pick; label: string; count: number }[] = [
+    { id: "all", label: "전체", count: news.length },
+    ...AREAS.map((area) => ({
+      id: area.id as Pick,
+      label: area.label,
+      count: news.filter((item) => areaOf(item) === area.id).length,
+    })),
+  ];
+
+  return (
+    <div
+      className="shrink-0 overflow-x-auto border-b border-line px-4 py-2 sm:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      role="tablist"
+      aria-label="뉴스 영역"
+    >
+      <div className="flex w-max gap-2">
+        {chips.map((chip) => {
+          const active = chip.id === pick;
+          return (
+            <button
+              key={chip.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => onPick(chip.id)}
+              /*
+                min-h-11 — 폰에서 누르는 것이다. CLAUDE.md 가 44px 밑으로 내리지
+                말라고 못박아 뒀고, 도면의 칩은 그보다 납작하다.
+                빈 영역도 죽이지 않는다 — 눌러서 "없다" 를 확인할 수 있어야
+                오늘 그 영역이 빈 건지 내가 잘못 본 건지가 갈린다.
+              */
+              className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3.5 font-display text-sm whitespace-nowrap transition-colors ${
+                active
+                  ? "border-accent bg-accent text-bg"
+                  : "border-line hover:bg-fg/[0.07] active:bg-fg/[0.14]"
+              } ${chip.count === 0 && !active ? "text-dim" : ""}`}
+            >
+              {chip.label}
+              <span
+                className={`tabular-nums ${active ? "opacity-80" : "text-dim"}`}
+              >
+                {chip.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 /**
  * 세로 스냅을 켜는 표시를 `<html>` 에 달았다 뗀다.
@@ -112,17 +220,28 @@ export function News({
 }) {
   useVerticalSnap();
 
+  const [pick, setPick] = useState<Pick>("all");
+  const visible = pickNews(briefing.news, pick);
+
   // priority 가 없는 항목(수집만 되고 요약 전)은 맨 아래 층으로 보낸다.
   const byTier = TIERS.map((tier) => ({
     ...tier,
-    items: briefing.news.filter(
-      (item) => (item.priority ?? 3) === tier.priority,
-    ),
+    items: visible.filter((item) => (item.priority ?? 3) === tier.priority),
   }));
   const filled = byTier.filter((tier) => tier.items.length > 0);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const active = useActiveTier(rootRef, filled.length);
+
+  /*
+    칩을 바꾸면 맨 위 층부터 다시 본다.
+    안 되돌리면 3층을 보다가 기사가 두 건뿐인 영역으로 갈아탔을 때 스크롤이
+    그대로 남아, 칸이 없어진 자리에서 빈 화면을 보게 된다.
+  */
+  const choose = (next: Pick) => {
+    setPick(next);
+    rootRef.current?.scrollTo({ top: 0 });
+  };
 
   // 지난 날짜를 보고 있을 때만 나온다. 도면엔 없지만 이게 없으면 오늘로 돌아올
   // 길이 화면에서 사라진다 — 예전엔 층 머리띠가 들고 있던 링크다.
@@ -146,16 +265,29 @@ export function News({
     <div className="flex h-full w-full min-w-0 flex-col">
       <DateBar date={date} today={today} tiers={byTier} />
       {/*
+        칩 줄도 스크롤 밖이다 — 날짜줄과 같은 이유로 붙박이 행이다.
+        기사가 아예 없는 날엔 고를 것이 없으니 줄 자체를 안 세운다.
+      */}
+      {briefing.news.length > 0 ? (
+        <AreaChips news={briefing.news} pick={pick} onPick={choose} />
+      ) : null}
+      {/*
         구르는 건 이 안쪽이다 — 날짜줄은 밖에 남아 붙박이가 된다 (도면 5A).
         <main> 을 그대로 굴리면 날짜줄도 같이 흘러가고, sticky 로 붙잡으면
         칸이 그 밑에 깔려 스냅 지점이 어긋난다.
       */}
       <div ref={rootRef} data-news-scroll className="flex min-h-0 flex-1 flex-col">
-      {briefing.news.length === 0 ? (
+      {visible.length === 0 ? (
         <SnapPanel first>
           <Kicker>오늘 볼 것</Kicker>
           <p className="rounded-2xl border border-line bg-surface p-6 text-sm text-dim">
-            오늘 모인 기사가 없습니다.
+            {/*
+              하루가 통째로 빈 것과 **고른 영역만** 빈 것은 다른 말이다.
+              뭉뚱그리면 칩을 잘못 눌러 놓고 오늘 뉴스가 없는 줄 안다.
+            */}
+            {briefing.news.length === 0
+              ? "오늘 모인 기사가 없습니다."
+              : "오늘은 이 영역에 올라온 기사가 없어요."}
           </p>
           {backToToday}
         </SnapPanel>
@@ -459,7 +591,21 @@ function LeadCard({
          홈 카드는 다른 컴포넌트이고 거기선 그대로 둔다 — 카드가 좁아서
          글줄 제한이 실제로 걸릴 일이 없다.
     */
-    <article className="flex w-full shrink-0 snap-start flex-col gap-3.5 rounded-2xl border border-line bg-surface p-5 sm:p-7">
+    <article className="flex w-full shrink-0 snap-start flex-col gap-3.5 rounded-2xl border border-line bg-surface p-5 sm:p-7 lg:flex-row lg:gap-6">
+      {/*
+        글 단. lg 부터 카드가 두 단이 되고(도면 7A "카드뉴스 2단") 이 단이 왼쪽,
+        이미지가 오른쪽에 선다. 그 아래에선 도면 6B 대로 세로로 쌓이고,
+        이미지는 제목과 내용 **사이**에 들어간다 (6B: 주제 칩 · 제목 · 이미지 · 내용 3단).
+
+        ⚠ min-w-0 — flex 아이템의 기본 min-width 는 auto 라 긴 표제가 단을 밀어
+          카드를 통째로 넓힌다. 그러면 캐러셀이 가로로 새어 나간다.
+
+        ⚠ flex-1 을 두 폭에서 다 건다. lg 에서는 **가로**로(두 단 중 왼쪽),
+          그 아래에서는 **세로**로 작동해 이 단이 카드 높이를 채운다.
+          안 채우면 아래 버튼 줄의 mt-auto 가 밀 자리가 없어 무효가 되고,
+          이미지 슬롯의 flex-1 도 나눠 가질 여백을 못 찾는다.
+      */}
+      <div className="flex min-w-0 flex-1 flex-col gap-3.5">
       <div className="flex flex-wrap items-center gap-2.5">
         <Kicker tone="accent">
           먼저 볼 것 · {String(index).padStart(2, "0")} /{" "}
@@ -488,6 +634,29 @@ function LeadCard({
           <p className="text-xs leading-[1.4] text-dim">원제 · {item.title}</p>
         ) : null}
       </div>
+
+      {/*
+        모바일 이미지 자리 — 제목과 내용 사이 (도면 6B).
+
+        ⚠ 슬롯이 둘인 이유: 좁은 화면에선 이 자리가 글 단 **안**이고, lg 부터는
+          글 단 **밖**의 오른쪽 단이다. 한 요소로는 두 자리에 동시에 있을 수 없어
+          각각 두고 CSS 로 한쪽만 남긴다 — Logo.tsx 가 밝기별 로고를 다루는 방식과
+          같은 문법이다. 두 슬롯이 같은 주소를 가리키니 실제로 받아오는 건 한 번이다.
+
+        높이는 144px 로 못박는다 (도면 6B 실측 ≈150px).
+
+        ⚠ 줄어드는 높이(flex-1 + max-h)로도 해 봤는데 **아무 효과가 없다.**
+          칸은 `min-height:100%` 라 높이가 확정된 상자가 아니고(index.css),
+          확정된 높이가 없으면 flex 가 나눠 줄 여백 자체를 못 만든다 —
+          슬롯은 늘 max 값에 붙어 있었다. 그래서 고정으로 되돌렸다.
+
+        ⚠ 대신 세로가 짧은 폰에서는 1층 칸이 화면보다 커져 칸 안에서 한 번 더
+          굴리게 된다 (실측: 390×844 는 659=659 로 딱 맞고, 375×667 은 619>482,
+          320×568 은 698>383). 이건 `min-height:100%` 가 원래 허용하는 동작이라
+          — 기사가 길면 칸이 늘어난다 — 새로 생긴 고장이 아니다. 글도 버튼도
+          잘리지 않고 그대로 닿는다(실측 확인).
+      */}
+      <NewsImage item={item} className="flex h-36 w-full shrink-0 lg:hidden" />
 
       {/*
         요약과 "왜 중요한가" 를 한 상자에 담는다.
@@ -523,6 +692,17 @@ function LeadCard({
           <Search size={16} strokeWidth={1.5} />
         </PendingButton>
       </div>
+      </div>
+
+      {/*
+        데스크탑 이미지 단 (도면 7A · 7B). 카드 높이만큼 세로로 늘어난다 —
+        기본 align-items:stretch 가 그렇게 해 주고, 그래서 글이 길든 짧든
+        두 단의 밑변이 나란히 선다.
+
+        lg:w-1/2 — 도면 실측이 글 346px : 이미지 343px 이라 사실상 반반이다.
+        고정 px 대신 비율로 두면 1152px 을 넘는 창에서도 같은 균형이 유지된다.
+      */}
+      <NewsImage item={item} className="hidden lg:flex lg:w-1/2 lg:shrink-0" />
     </article>
   );
 }

@@ -160,12 +160,15 @@ function AppearanceSection() {
       note="밝기와 색조는 따로 고릅니다. 둘 다 이 브라우저에 저장되고, 밝기를 시스템에 맡기면 OS 설정을 따라가요."
       /*
         뉴스 소스 구획이 태그를 다는 그 자리다 (Section 의 aside).
-        좁은 화면에선 Section 의 flex-wrap 이 제목 아래로 접어 주는데, 그때는
-        이 덩어리가 줄의 맨 앞에 서므로 왼쪽 정렬이 맞다 — 라벨만 오른쪽에
-        떠 있으면 버튼과 어긋나 보인다. 접히지 않는 폭에서만 오른쪽 끝에 붙인다.
+
+        ⚠ `ml-auto` 가 있어야 한다. Section 제목줄은 `flex-wrap justify-between`
+          이라 좁은 화면에서 이 덩어리가 아랫줄로 접히는데, **접힌 줄은 항목이
+          하나뿐이라 justify-between 이 왼쪽에 붙여 버린다.** 실측으로 390px 에서
+          제목줄 오른끝과 212px 어긋나 있었다(640px 은 462px). ml-auto 는 접히든
+          안 접히든 오른쪽으로 민다. 라벨과 버튼은 items-end 로 서로 맞춘다.
       */
       aside={
-        <div className="flex shrink-0 flex-col items-start gap-1.5 sm:items-end">
+        <div className="ml-auto flex shrink-0 flex-col items-end gap-1.5">
           <Kicker>밝기</Kicker>
           <ThemeToggle />
         </div>

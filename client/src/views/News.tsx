@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { formatRelative } from "@shared/date";
+import { formatKoreanDate, formatRelative, shiftISO } from "@shared/date";
 import type { Briefing, NewsItem, Priority } from "@shared/types";
-import { Bookmark, ChevronDown, ExternalLink, Search } from "lucide-react";
+import {
+  Bookmark,
+  CalendarDays,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  Search,
+} from "lucide-react";
 import { SnapCarousel } from "../components/SnapCarousel";
 import { Kicker, LinkButton, PendingButton, Tag } from "../components/ui";
 import { hrefFor } from "../lib/views";
@@ -39,13 +47,12 @@ function useVerticalSnap() {
 }
 
 /**
- * 스냅이 걸린 스크롤 컨테이너 — 언제나 <main data-scrollarea> 다.
+ * 스냅이 걸린 스크롤 컨테이너 — 뿌리 안쪽의 [data-news-scroll] 이다.
  *
- * 예전엔 폭에 따라 문서일 수도 있어서 "정말 넘치는 쪽" 을 골라야 했다.
- * 셸이 모든 폭에서 뷰포트 높이에 고정된 뒤로는 구르는 놈이 하나뿐이다.
+ * <main> 이 아니다. 날짜줄을 스크롤 밖에 붙박이로 두려고 한 겹 안으로 들어갔다.
  */
 function scrollerFor(root: HTMLElement | null): HTMLElement | null {
-  return root?.closest<HTMLElement>("[data-scrollarea]") ?? null;
+  return root;
 }
 
 /**
@@ -136,7 +143,14 @@ export function News({
      * 올라가는데, 여기서 auto 로 끊기면 칸이 내용 높이로 주저앉아 스냅이
      * 통째로 무너진다. 예전엔 md 부터만이었다 — 그 아래선 문서가 굴렀다.
      */
-    <div ref={rootRef} className="flex h-full w-full min-w-0 flex-col">
+    <div className="flex h-full w-full min-w-0 flex-col">
+      <DateBar date={date} today={today} tiers={byTier} />
+      {/*
+        구르는 건 이 안쪽이다 — 날짜줄은 밖에 남아 붙박이가 된다 (도면 5A).
+        <main> 을 그대로 굴리면 날짜줄도 같이 흘러가고, sticky 로 붙잡으면
+        칸이 그 밑에 깔려 스냅 지점이 어긋난다.
+      */}
+      <div ref={rootRef} data-news-scroll className="flex min-h-0 flex-1 flex-col">
       {briefing.news.length === 0 ? (
         <SnapPanel first>
           <Kicker>오늘 볼 것</Kicker>
@@ -204,6 +218,7 @@ export function News({
         ))
       )}
 
+      </div>
       <TierDots tiers={filled} active={active} root={rootRef} />
     </div>
   );
@@ -249,6 +264,94 @@ function SnapPanel({
     >
       {children}
     </section>
+  );
+}
+
+/**
+ * 스크롤 영역 위에 붙박이로 서는 날짜 줄 (도면 5A).
+ *
+ * 무엇을 보고 있는지(날짜)와 오늘 몇 건인지(층별 건수)를 한 줄에 둔다.
+ * 칸을 넘길 때마다 헤더가 바뀌지 않으니, 지금 몇 층인지는 도트가 말하고
+ * **어느 날 기사인지**는 여기가 계속 말한다.
+ *
+ * ⚠ 모바일에는 없다 (도면 6B). 좁은 화면에선 앱 헤더가 이미 같은 날짜를
+ *   달고 있어서 두 줄이 같은 말을 반복한다.
+ */
+function DateBar({
+  date,
+  today,
+  tiers,
+}: {
+  date: string;
+  today: string;
+  tiers: { priority: Priority; label: string; items: NewsItem[] }[];
+}) {
+  return (
+    <div className="hidden shrink-0 items-center justify-between gap-3 border-b border-line px-6 py-3 md:flex">
+      <span className="flex min-w-0 items-baseline gap-2.5">
+        <span className="whitespace-nowrap font-display text-[15px] font-semibold">
+          {formatKoreanDate(date)} 기사
+        </span>
+        <span className="hidden whitespace-nowrap text-xs text-dim lg:inline">
+          {tiers.map((tier, index) => (
+            <span key={tier.priority}>
+              {index > 0 ? " · " : ""}
+              {/* 1층만 색을 준다 — 오늘 꼭 봐야 할 게 몇 건인지가 먼저 눈에 걸려야 한다 */}
+              <span
+                className={
+                  tier.priority === 1
+                    ? "font-semibold text-accent"
+                    : tier.priority === 2
+                      ? "font-semibold"
+                      : ""
+                }
+              >
+                {tier.label} {tier.items.length}
+              </span>
+            </span>
+          ))}
+        </span>
+      </span>
+
+      <div className="flex shrink-0 items-center gap-1.5">
+        <DayStep to={shiftISO(date, -1)} label="하루 전">
+          <ChevronLeft size={15} strokeWidth={1.5} />
+        </DayStep>
+        <span className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-[13px] text-mid">
+          <CalendarDays size={14} strokeWidth={1.5} aria-hidden="true" />
+          {date}
+        </span>
+        {/* 내일 기사는 없다. 오늘이면 앞으로 가는 길을 막는다 */}
+        <DayStep to={date < today ? shiftISO(date, 1) : null} label="하루 뒤">
+          <ChevronRight size={15} strokeWidth={1.5} />
+        </DayStep>
+      </div>
+    </div>
+  );
+}
+
+function DayStep({
+  to,
+  label,
+  children,
+}: {
+  to: string | null;
+  label: string;
+  children: ReactNode;
+}) {
+  const shape =
+    "inline-flex size-8 items-center justify-center rounded-lg border border-line text-mid";
+  if (!to) {
+    return (
+      <span className={`${shape} opacity-35`} aria-hidden="true">
+        {children}
+      </span>
+    );
+  }
+  return (
+    <a href={hrefFor("news", to)} aria-label={label} className={shape}>
+      {children}
+    </a>
   );
 }
 
@@ -331,11 +434,11 @@ function LeadCard({
 
   return (
     /*
-       측정값(max-w)이 홈 카드와 다르다. 홈 카드는 644px 라 24ch(333px)가
-       절반을 쓰는데, 이 카드는 칸을 통째로 채워 928px 라 같은 24ch 가 36%
-       밖에 안 돼 오른쪽이 휑하게 빈다. 도면이 720px 틀로 그려져 있어 넓은
-       화면 몫이 정해져 있지 않았다 — 도면의 비율(약 60%)을 유지하도록 넓혔다.
-       읽기 좋은 길이는 지킨다: 제목 38ch, 본문 68ch 위로는 안 늘린다.
+       ⚠ 여기엔 max-w 를 두지 않는다 (도면 5A · 6B: h4·p 에 max-width 없음).
+         카드 자체가 이미 칸 안에서 폭을 정하고 있어서, 글줄까지 또 묶으면
+         카드는 넓은데 글만 왼쪽 3분의 1에 몰려 오른쪽이 휑하게 빈다.
+         홈 카드는 다른 컴포넌트이고 거기선 그대로 둔다 — 카드가 좁아서
+         글줄 제한이 실제로 걸릴 일이 없다.
     */
     <article className="flex w-full shrink-0 snap-start flex-col gap-3.5 rounded-2xl border border-line bg-surface p-5 sm:p-7">
       <div className="flex flex-wrap items-center gap-2.5">
@@ -352,7 +455,7 @@ function LeadCard({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <h4 className="max-w-[38ch] font-display text-2xl leading-[1.18] break-keep sm:text-[31px]">
+        <h4 className="font-display text-2xl leading-[1.18] break-keep sm:text-[31px]">
           {item.headline ?? item.title}
         </h4>
         {/* 표제가 없으면 위가 이미 원제다. 같은 문장을 두 번 쓰지 않는다 */}
@@ -362,7 +465,7 @@ function LeadCard({
         {/* 설명은 표제 아래 제자리에. 예전엔 요약이 제목 노릇을 해서
             읽을 문장이 표제 자리에 올라가 있었다 */}
         {item.summary ? (
-          <p className="max-w-[68ch] pt-1 text-[15px] leading-relaxed text-mid text-pretty">
+          <p className="pt-1 text-[15px] leading-relaxed text-mid text-pretty">
             {item.summary}
           </p>
         ) : null}
@@ -374,7 +477,7 @@ function LeadCard({
           요약 단계를 안 거친 기사가 실제로 그렇다. 그래서 있을 때만 그린다.
       */}
       {item.relevance ? (
-        <p className="max-w-[68ch] border-l-2 border-accent bg-accent-soft px-3.5 py-3 text-sm leading-relaxed text-accent-ink text-pretty sm:min-h-24">
+        <p className="border-l-2 border-accent bg-accent-soft px-3.5 py-3 text-sm leading-relaxed text-accent-ink text-pretty sm:min-h-24">
           {item.relevance}
         </p>
       ) : null}

@@ -206,17 +206,17 @@ body {
  * 죽 이어지던 걸, 층마다 화면을 통째로 차지하고 스크롤하면 다음 층으로
  * 딱 끊어 넘어가게 했다.
  *
- * ⚠ 스냅은 **실제로 구르는 요소**에 걸어야 하는데, 이 앱에선 언제나 <main> 이다.
- *   예전엔 md 미만에서 문서가 굴러서 <html> 에도 같이 걸어야 했다. 도면(6A~6D)
- *   대로 셸을 모든 폭에서 뷰포트 높이에 고정하고 나니 구르는 놈이 하나로 줄었다 —
- *   상단 날짜줄과 하단 탭바는 붙박이고 가운데만 구른다.
+ * ⚠ 스냅은 **실제로 구르는 요소**에 걸어야 한다. 그게 [data-news-scroll] 이다 —
+ *   <main> 이 아니다. 도면 5A 에서 날짜 줄이 스크롤 영역 **밖**에 붙박이로
+ *   서 있어서, 구르는 자리가 <main> 보다 한 겹 안으로 들어갔다.
  *
- * ⚠ 뉴스 탭에서만 켠다. 홈의 가로 캐러셀 카드에도 snap-start 가 붙어 있는데,
- *   scroll-snap-align 은 가로·세로를 한꺼번에 정하는 속성이라 상시로 걸면
- *   홈에서 카드마다 세로로 걸려 버린다.
- *   표시(.news-snap)는 News.tsx 가 <html> 에 달았다 뗀다.
+ * 홈에 새어 나갈 걱정은 없다 — [data-news-scroll] 은 뉴스 화면에만 있는 표시라
+ * 조건을 따로 걸 필요가 없다. (예전엔 <main> 에 걸어서 뉴스 탭인지 아닌지를
+ * .news-snap 으로 갈라야 했다. 지금 .news-snap 이 하는 일은 아래 하나뿐이다 —
+ * 구르는 자리가 안으로 들어갔으니 <main> 은 구르지 말라고 알리는 것.)
  */
-.news-snap main[data-scrollarea] {
+[data-news-scroll] {
+  overflow-y: auto;
   scroll-snap-type: y mandatory;
 }
 
@@ -235,13 +235,19 @@ body {
  * ⚠ 감추는 건 막대뿐이다. overflow 를 hidden 으로 막으면 스크롤이 죽고
  *   스냅도 같이 죽는다.
  */
-.news-snap main[data-scrollarea] {
+[data-news-scroll] {
   scrollbar-width: none;
-  scrollbar-gutter: auto;
   -ms-overflow-style: none;
 }
-.news-snap main[data-scrollarea]::-webkit-scrollbar {
+[data-news-scroll]::-webkit-scrollbar {
   display: none;
+}
+/* 뉴스 탭에서는 <main> 이 구르지 않는다 — 날짜줄을 붙박이로 두려고
+   구르는 자리가 한 겹 안으로 들어갔다. 여기 스크롤바 자리(gutter)까지
+   비워야 오른쪽에 12px 짜리 빈 홈이 남지 않는다. */
+.news-snap main[data-scrollarea] {
+  overflow: hidden;
+  scrollbar-gutter: auto;
 }
 
 /*

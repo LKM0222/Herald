@@ -82,16 +82,22 @@ export function AppShell({
         </nav>
 
         {/*
-          본문 — 하단 탭바에 가리지 않도록 모바일에서 아래 여백을 준다.
-          md 이상에선 이 <main> 자체가 하나의 스크롤 영역이 된다(뷰가 본문·스트립을
-          아직 나란히 쪼개지 않는 md~lg 구간까지 담당). lg 부터는 각 뷰가 내부에서
-          본문·스트립을 SCROLL_PANE(ui.tsx)으로 따로 쪼개고, 그땐 이 높이에
-          정확히 맞춰 들어가 있어서(align-items:stretch) 이 main 자체는 넘칠 게
-          없어져 스크롤바가 저절로 사라진다 — 그래서 lg 이상을 따로 갈라 끄지 않아도 된다.
+          본문 — lg 미만에선 이 <main> 자체가 하나의 스크롤 영역이다. lg 부터는
+          각 뷰가 내부에서 본문·스트립을 SCROLL_PANE(ui.tsx)으로 따로 쪼개고,
+          그땐 이 높이에 정확히 맞춰 들어가 있어서(align-items:stretch) 이 main
+          자체는 넘칠 게 없어져 스크롤바가 저절로 사라진다.
+
+          ⚠ items-start 가 반드시 lg 미만에 있어야 한다. 이 main 은 flex 컨테이너(가로)
+            라서 기본값 align-items:stretch 가 뷰 루트의 **높이를 main 의 높이로
+            못박는다.** 그러면 진짜 내용은 루트 상자 밖으로 흘러나가고, 상자 밖으로
+            나간 것에는 스크롤 컨테이너의 아래 여백(pb-10)이 안 붙는다 —
+            마지막 요소가 하단 탭바에 0px 로 딱 붙어 버린다(실측: 40px → 0.3px).
+            "브리핑이 없어요" 같은 안내 상자도 화면 높이만큼 늘어난다.
+            lg 부터는 반대로 stretch 여야 SCROLL_PANE 이 굴러서 다시 켠다.
         */}
         <main
           data-scrollarea
-          className={`flex min-h-0 min-w-0 flex-1 overflow-y-auto ${
+          className={`flex min-h-0 min-w-0 flex-1 items-start overflow-y-auto lg:items-stretch ${
             view === "news"
               ? /*
                    뉴스 탭만 예외다. 층마다 화면을 통째로 차지하며 스냅하는데

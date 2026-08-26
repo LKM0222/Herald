@@ -209,11 +209,13 @@ export function ScheduleView({
             <ul className="flex flex-col">
               {upcoming.map((item) => (
                 <li key={item.id} className="border-t border-line">
-                  {/* 목록에서도 날짜로 건너뛸 수 있어야 달력과 따로 놀지 않는다 */}
+                  {/* 목록에서도 날짜로 건너뛸 수 있어야 달력과 따로 놀지 않는다.
+                      min-h-11 — 화면 폭을 다 쓰는 손가락 표적이라 44px 을 채운다.
+                      py-2.5 만 두면 한 줄짜리 항목이 40px 로 내려앉는다. */}
                   <button
                     type="button"
                     onClick={() => setAnchor(item.date)}
-                    className="flex w-full flex-wrap items-baseline gap-x-4 gap-y-0.5 py-2.5 text-left hover:bg-fg/[0.05]"
+                    className="flex min-h-11 w-full flex-wrap content-center items-baseline gap-x-4 gap-y-0.5 py-2.5 text-left hover:bg-fg/[0.05]"
                   >
                     <span className="w-24 shrink-0 text-[13px] text-dim">
                       {formatKoreanDate(item.date)}
@@ -938,9 +940,10 @@ function ConnectedCalendars({
             </p>
           </>
         )}
+        {/* 손가락 표적이라 글자 높이(20px)로 두지 않는다 — 누르는 자리만 44px 로 넓힌다 */}
         <a
           href={`${hrefFor("settings")}#calendar`}
-          className="text-[13px] text-accent hover:underline"
+          className="inline-flex min-h-11 items-center text-[13px] text-accent hover:underline"
         >
           설정에서 {registered.length > 0 ? "연결 관리" : "연결하기"} →
         </a>

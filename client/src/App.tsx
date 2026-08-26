@@ -201,7 +201,13 @@ function Status({
   children: ReactNode;
 }) {
   return (
-    <div className="flex max-w-lg flex-col items-start gap-3 rounded-2xl border border-line bg-surface p-6">
+    /*
+      self-start — 이 상자가 뷰 루트 자리에 그대로 들어간다. <main> 은 lg 부터
+      자식을 제 높이로 늘리는데(AppShell), 그건 본문·스트립을 따로 굴리는
+      화면들 얘기다. 안 막으면 안내 한 줄짜리 상자가 화면 높이만큼 빈 테두리로
+      늘어난다 (실측 1280px: 110px 이면 될 것이 715px).
+    */
+    <div className="flex max-w-lg flex-col items-start gap-3 self-start rounded-2xl border border-line bg-surface p-6">
       <h2 className="font-display text-xl">{title}</h2>
       <p className="text-sm">{children}</p>
       {detail ? <p className="text-xs leading-relaxed text-dim">{detail}</p> : null}

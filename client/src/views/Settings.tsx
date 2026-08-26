@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { CATALOG } from "@shared/sources";
+import { AREAS, byArea, CATALOG } from "@shared/sources";
 import {
   CalendarDays,
   CalendarX,
@@ -253,7 +253,25 @@ function SourcesSection({ config }: { config: Config }) {
     );
   }
 
+  /**
+   * 영역 하나를 통째로 켜고 끈다.
+   *
+   * 한 번에 하나씩 누르게 두면 영역 하나를 켜는 데 여섯 번을 저장한다 —
+   * 저장이 서버 왕복이라 그동안 체크박스가 따로 논다. 한 번에 보낸다.
+   *
+   * 하나라도 꺼져 있으면 **켜는 쪽**으로 움직인다. 다 켜져 있을 때만 끈다 —
+   * 반쯤 켜진 상태에서 눌렀을 때 꺼지면, 방금 고른 것들이 사라진다.
+   */
+  function toggleArea(ids: string[], allOn: boolean) {
+    if (!enabled || !schedule) return;
+    const next = allOn
+      ? enabled.filter((value) => !ids.includes(value))
+      : [...new Set([...enabled, ...ids])];
+    void save(next, schedule);
+  }
+
   const count = enabled?.length ?? 0;
+  const grouped = byArea(CATALOG);
 
   return (
     <Section
@@ -282,34 +300,71 @@ function SourcesSection({ config }: { config: Config }) {
       {enabled === null && !error ? (
         <p className="text-sm text-dim">불러오는 중…</p>
       ) : (
-        <ul className="flex flex-col border-t border-line">
-          {CATALOG.map((source) => {
-            const on = enabled?.includes(source.id) ?? false;
+        /* 영역별로 묶는다. 스물넷을 한 줄로 세우면 무엇을 켜뒀는지 안 보인다 —
+           뉴스 탭의 칩과 같은 갈래라 거기서 본 순서 그대로 둔다. */
+        <div className="flex flex-col gap-5">
+          {AREAS.map((area) => {
+            const sources = grouped[area.id];
+            if (sources.length === 0) return null;
+            const on = sources.filter(
+              (source) => enabled?.includes(source.id) ?? false,
+            ).length;
+            const allOn = on === sources.length;
+
             return (
-              <li key={source.id} className="border-b border-line">
-                <label className="flex min-h-11 cursor-pointer items-start gap-3 py-3">
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={() => void toggle(source.id)}
-                    className="mt-1 size-4 shrink-0 accent-[var(--accent)]"
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium">{source.name}</span>
-                      {"noisy" in source && source.noisy ? (
-                        <Tag>양 많음</Tag>
-                      ) : null}
-                    </span>
-                    <span className="mt-0.5 block text-xs leading-snug text-dim">
-                      {source.note}
-                    </span>
+              <div key={area.id} className="flex flex-col">
+                <div className="flex min-h-11 flex-wrap items-center gap-x-2.5 gap-y-1">
+                  <span className="font-display text-[13px] uppercase tracking-[0.1em] text-dim">
+                    {area.label}
                   </span>
-                </label>
-              </li>
+                  <span className="text-xs tabular-nums text-dim">
+                    {on}/{sources.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      toggleArea(
+                        sources.map((source) => source.id),
+                        allOn,
+                      )
+                    }
+                    className="ml-auto min-h-11 px-1 text-xs text-dim underline-offset-4 hover:text-ink hover:underline"
+                  >
+                    {allOn ? "전체 끄기" : "전체 켜기"}
+                  </button>
+                </div>
+
+                <ul className="flex flex-col border-t border-line">
+                  {sources.map((source) => (
+                    <li key={source.id} className="border-b border-line">
+                      <label className="flex min-h-11 cursor-pointer items-start gap-3 py-3">
+                        <input
+                          type="checkbox"
+                          checked={enabled?.includes(source.id) ?? false}
+                          onChange={() => void toggle(source.id)}
+                          className="mt-1 size-4 shrink-0 accent-[var(--accent)]"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-medium">
+                              {source.name}
+                            </span>
+                            {"noisy" in source && source.noisy ? (
+                              <Tag>양 많음</Tag>
+                            ) : null}
+                          </span>
+                          <span className="mt-0.5 block text-xs leading-snug text-dim">
+                            {source.note}
+                          </span>
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             );
           })}
-        </ul>
+        </div>
       )}
 
       <p className="text-xs leading-relaxed text-dim">

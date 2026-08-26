@@ -1,4 +1,5 @@
 import type { NewsItem } from "@shared/types";
+import { imageFromHtml } from "./image";
 
 /**
  * 원문 가져오기.
@@ -35,6 +36,14 @@ export type Fetched = {
   id: string;
   /** 본문. 실패하면 없다 */
   text?: string;
+  /**
+   * 원문이 내건 대표 이미지(og:image).
+   *
+   * ⚠ **요청이 하나도 안 는다.** 어차피 받는 HTML 을 한 번 더 훑을 뿐이다.
+   *   개발 소스는 피드에 이미지가 아예 없어서(GeekNews·Hacker News·OpenAI·
+   *   Next.js·Hugging Face 전부 0건) 여기가 사실상 유일한 경로다.
+   */
+  image?: string;
   /** 왜 못 가져왔는지. 성공하면 없다 */
   error?: string;
 };
@@ -67,12 +76,22 @@ async function fetchOne(item: NewsItem): Promise<Fetched> {
       return { id: item.id, error: `본문이 아님 (${type.split(";")[0] || "형식 불명"})` };
     }
 
-    const text = readable(await response.text());
+    const html = await response.text();
+    /* 이미지는 본문보다 먼저 꺼낸다 — 본문이 짧아 실패로 처리되는 페이지에도
+       og:image 는 멀쩡히 있다. 리다이렉트를 따라갔을 수 있으니 최종 주소를
+       기준으로 상대경로를 편다. */
+    const image = imageFromHtml(html, response.url || item.url);
+
+    const text = readable(html);
     if (text.length < 200) {
       // 자바스크립트로 그리는 페이지는 껍데기만 온다. 억지로 쓰지 않는다.
-      return { id: item.id, error: "본문을 찾지 못함" };
+      return { id: item.id, error: "본문을 찾지 못함", ...(image ? { image } : {}) };
     }
-    return { id: item.id, text: text.slice(0, MAX_CHARS) };
+    return {
+      id: item.id,
+      text: text.slice(0, MAX_CHARS),
+      ...(image ? { image } : {}),
+    };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     return { id: item.id, error: detail };

@@ -275,11 +275,14 @@ async function summarizeArea(
 
   // ── 2차 · 뽑힌 몇 건만 원문으로 ────────────────────────
   const deep = new Map<string, { headline: string; summary: string; relevance: string }>();
+  /** 원문에서 건진 og:image. 피드에 이미지가 없던 기사만 이걸 쓴다 */
+  const crawled = new Map<string, string>();
   let fetched: Fetched[] = [];
 
   if (deepList.length > 0) {
     fetched = await fetchArticles(deepList);
     for (const one of fetched) {
+      if (one.image) crawled.set(one.id, one.image);
       if (one.error) {
         const title = byId.get(one.id)?.title ?? one.id;
         notes.push(`원문 못 가져옴 · ${title} (${one.error})`);
@@ -314,12 +317,17 @@ async function summarizeArea(
          덮는다. 2차는 본문을 봤으니 더 정확하다. 없으면 1차 것을 쓴다 —
          2·3층은 원문을 안 읽으므로 늘 1차 표제다. */
       const headline = detail?.headline || heads.get(item.id) || "";
+      /* 피드가 준 이미지가 있으면 그대로 둔다. 원문 og:image 는 **없을 때만**
+         채운다 — 피드 것이 그 매체가 고른 대표 이미지라 대개 더 맞고,
+         og:image 는 사이트 공용 배너인 경우가 많다(Hugging Face 가 그렇다). */
+      const image = item.image ?? crawled.get(item.id);
       return {
         ...item,
         priority: tier.get(item.id) as Priority,
         score: scores.get(item.id),
         ...(topic ? { topic } : {}),
         ...(headline ? { headline } : {}),
+        ...(image ? { image } : {}),
         ...(detail?.summary ? { summary: detail.summary } : {}),
         ...(detail?.relevance ? { relevance: detail.relevance } : {}),
       };

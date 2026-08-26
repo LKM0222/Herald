@@ -1,6 +1,7 @@
 import { XMLParser } from "fast-xml-parser";
 import { CATALOG, type SourceInfo } from "@shared/sources";
 import { AREA_IDS, type Area, type NewsItem } from "@shared/types";
+import { imageFromEntry, imageFromGithub } from "./image";
 import { resolveOrigins, type OriginReport } from "./origin";
 import { idFor } from "./url";
 
@@ -403,6 +404,11 @@ function toItem(
   // 짧은 건 본문이 아니라 피드의 껍데기다 (EXCERPT_MIN 참고).
   const excerpt = raw.length >= EXCERPT_MIN ? raw : "";
 
+  /* ⚠ **clean() 보다 먼저 원본 entry 를 넘겨야 한다.** 위에서 태그를 걷어낸
+     문자열에는 <img> 가 남아 있지 않다 — 게임메카·루리웹은 본문 HTML 안의
+     <img> 가 유일한 이미지라 순서가 뒤바뀌면 그 두 곳이 통째로 빈다. */
+  const image = imageFromEntry(entry, url) ?? imageFromGithub(url);
+
   return {
     id: idFor(url),
     // 영역은 **소스가 정한다.** 모델에게 묻지 않는다 — 어느 탭에 실릴지는
@@ -413,6 +419,7 @@ function toItem(
     source: source.name,
     publishedAt: published.toISOString(),
     ...(excerpt ? { excerpt } : {}),
+    ...(image ? { image } : {}),
   };
 }
 

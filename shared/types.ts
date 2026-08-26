@@ -88,6 +88,14 @@ export type NewsItem = {
   excerpt?: string;
   /** 같은 사건을 보도한 다른 기사들. 중복을 지우지 않고 묶어서 보여준다 */
   alsoIn?: { source: string; url: string }[];
+  /**
+   * 카드에 띄울 대표 이미지 주소.
+   *
+   * ⚠ **만들어낸 이미지가 아니다.** 피드가 실어 보낸 것 · 원문의 og:image ·
+   *   GitHub 아바타 순으로 **이미 있는 것만** 꺼낸다 (server/lib/news/image.ts).
+   *   없으면 이 필드가 비고, 화면이 테마에 맞는 로고를 대신 그린다.
+   */
+  image?: string;
 };
 
 export type ScheduleItem = {

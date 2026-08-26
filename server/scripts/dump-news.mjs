@@ -61,6 +61,7 @@ rmSync(BUILD, { recursive: true, force: true });
 const sources = [
   "server/lib/news/pending.ts",
   "server/lib/news/collect.ts",
+  "server/lib/news/image.ts",
   "server/lib/news/origin.ts",
   "server/lib/news/url.ts",
   "server/lib/news/seen.ts",

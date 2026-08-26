@@ -468,6 +468,17 @@ function Score({ value }: { value?: number }) {
  *
  * ⚠ 스크롤 영역 **밖**의 붙박이 행이다 (칩 줄과 같다). 안에 넣으면 층을
  *   굴릴 때 같이 흘러가고, 스냅 지점도 이 줄 높이만큼 어긋난다.
+ *
+ * ⚠ 좁은 화면에서 이 줄은 **한 줄이다** (도면 6B · 9A: 제목 옆에 건수, 오른쪽
+ *   끝에 32px 버튼, padding 10px 16px 0, 아래 테두리 없음). 두 줄로 쌓았을 땐
+ *   61px 이었는데, 그 높이는 글이 아니라 **44px 버튼**이 정하고 있었다 —
+ *   글만 한 줄로 눕혀도 1px 도 안 줄어든다. 버튼을 도면대로 32px 로 내려야
+ *   실제로 줄어들고, 그만큼이 아래 스냅 칸(1층 카드)으로 돌아간다.
+ *   대신 **누르는 자리는 44px 로 남긴다** — index.css 의 `.date-step` 이
+ *   보이는 크기는 그대로 두고 가짜 요소로만 넓힌다 (도트와 같은 문법).
+ *
+ * ⚠ md 부터는 예전 그대로다. 6B 는 모바일 도면이고, 데스크탑 날짜 줄은
+ *   긴 층 이름 · 날짜 알약 · 아래 테두리 · py-3 을 그대로 들고 있어야 한다.
  */
 function DateBar({
   date,
@@ -478,15 +489,45 @@ function DateBar({
   today: string;
   tiers: { priority: Priority; label: string; short: string; items: NewsItem[] }[];
 }) {
+  /*
+    도면 6B 의 제목은 **요일이 없다** ("8월 25일 기사"). 머리줄이 이미 요일까지
+    달고 있어서 같은 줄에 또 적을 이유가 없고, 320px 에서는 그 네 글자가
+    오른쪽 건수를 그대로 밀어낸다 (실측: 요일이 있으면 건수가 5px 모자라
+    "참고 33" 이 잘렸다).
+
+    그래서 자르는 게 아니라 **md 부터만 덧붙인다.** 포맷이 바뀌어 괄호가
+    사라지면 정규식이 안 맞아 덧붙일 게 없어질 뿐, 날짜는 그대로 남는다.
+  */
+  const full = formatKoreanDate(date);
+  const stem = full.replace(/\s*\([^)]*\)\s*$/, "");
+  const weekday = full.slice(stem.length);
+
   return (
-    // 좌우 여백은 칩 줄과 같은 값을 쓴다 (px-4 sm:px-6) — 두 붙박이 행의 글이 세로로 맞는다
-    <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-4 py-2 sm:px-6 md:py-3">
-      {/* 좁은 화면에선 날짜와 건수가 세로로 쌓이고, sm 부터 한 줄로 눕는다 */}
-      <span className="flex min-w-0 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2.5">
-        <span className="truncate font-display text-[15px] font-semibold">
-          {formatKoreanDate(date)} 기사
+    /*
+      좌우 여백은 칩 줄과 같은 값을 쓴다 (px-4 sm:px-6) — 두 붙박이 행의 글이 세로로 맞는다.
+
+      위아래는 도면의 10px / 0 이 아니라 10px / 6px 이다. 6px 은 버튼의 44px
+      누름자리가 아래로 삐져나갈 자리다 — 0 으로 두면 그 6px 이 칩 줄의 위
+      여백을 덮어, 칩 바로 위를 눌렀을 때 하루 전으로 넘어간다.
+    */
+    <div className="flex shrink-0 items-center justify-between gap-2 px-4 pt-2.5 pb-1.5 sm:px-6 md:border-b md:border-line md:py-3">
+      {/* 도면 6B: 제목과 건수가 baseline 으로 한 줄에 선다 (gap 8px) */}
+      <span className="flex min-w-0 items-baseline gap-2 md:gap-2.5">
+        {/* shrink-0 + truncate — 안 줄어드니 실제로 잘릴 일은 없다. truncate 를
+            남겨 두는 건 md 부터의 글상자를 예전과 1px 도 다르지 않게 두려는
+            것이다 (overflow:hidden 이 줄상자 높이를 바꾼다 — 실측 23 vs 21) */}
+        {/*
+          ⚠ text-sm 이 아니라 text-[14px] 다. 크기는 같지만 text-sm 은 줄간격까지
+            같이 정하는데, md:text-[15px] 는 **크기만** 바꾸는 임의값이라
+            그 줄간격이 데스크탑까지 따라와 글상자가 23 → 21px 로 줄었다(실측).
+            임의값끼리 두면 양쪽 다 본문 줄간격(1.55)을 그대로 물려받는다.
+        */}
+        <span className="shrink-0 truncate font-display text-[14px] font-semibold md:text-[15px]">
+          {stem}
+          <span className="hidden md:inline">{weekday}</span> 기사
         </span>
-        <span className="truncate text-xs text-dim">
+        {/* 좁은 화면에서 먼저 잘리는 쪽은 건수다 — 날짜가 잘리면 무슨 날인지가 사라진다 */}
+        <span className="truncate text-[11px] text-dim md:text-xs">
           {tiers.map((tier, index) => (
             <span key={tier.priority}>
               {index > 0 ? " · " : ""}
@@ -514,7 +555,13 @@ function DateBar({
         </span>
       </span>
 
-      <div className="flex shrink-0 items-center gap-1.5">
+      {/*
+        gap-3(12px) — 버튼 둘의 44px 누름자리가 서로 6px 씩 이 틈으로 넓어져
+        정확히 맞닿는다. 더 좁히면 겹쳐서, 사이를 눌렀을 때 어제로 갈지
+        내일로 갈지가 DOM 순서로 정해진다 (도트와 같은 함정).
+        md 부터는 누름자리를 안 넓히므로 예전 간격(6px)으로 되돌린다.
+      */}
+      <div className="flex shrink-0 items-center gap-3 md:gap-1.5">
         <DayStep to={shiftISO(date, -1)} label="하루 전">
           <ChevronLeft size={15} strokeWidth={1.5} />
         </DayStep>
@@ -546,11 +593,16 @@ function DayStep({
   children: ReactNode;
 }) {
   /*
-    size-11(44px) — 이 줄이 폰에도 서면서 손가락으로 누르는 것이 됐다 (CLAUDE.md).
-    md 부터는 마우스로 겨누므로 도면대로 32px 로 되돌린다.
+    보이는 크기는 **모든 폭에서 32px** 이다 (도면 6B · 9A: width/height 32px,
+    border-radius 8px). 폰에서 44px 로 키웠던 적이 있는데, 그러면 날짜 줄 높이가
+    통째로 44px 에 묶여 도면의 납작한 한 줄이 안 나온다.
+
+    누르는 자리는 그대로 44px 다 — `.date-step`(index.css)이 md 미만에서 가짜
+    요소로 사방 6px 씩 넓힌다. 도트(.news-dot)와 같은 문법이고, 레이아웃을
+    밀지 않아서 줄 높이에 영향이 없다.
   */
   const shape =
-    "inline-flex size-11 items-center justify-center rounded-lg border border-line text-mid md:size-8";
+    "date-step inline-flex size-8 items-center justify-center rounded-lg border border-line text-mid";
   if (!to) {
     return (
       <span className={`${shape} opacity-35`} aria-hidden="true">
@@ -624,12 +676,20 @@ function TierDots({
 /**
  * 1층 카드.
  *
- * 요약이 제목 자리를 차지하고 원제는 바로 밑에 붙는다 — 도면 5A 에서 원제가
- * "왜 중요한가" 블록 아래에서 제목 밑으로 올라왔다. 원제는 **같은 기사가
- * 맞는지 확인하는 용도**라 제목에서 멀어지면 대조할 수가 없다.
+ * **한 카드가 두 도면을 산다.** lg 미만은 도면 6B(한 단: 머리 · 이미지 · 요약 ·
+ * 버튼), lg 부터는 도면 5A · 7A(두 단: 글 왼쪽 · 이미지 오른쪽)다. 둘은 같은
+ * 정보를 다른 순서로 세우기 때문에, 자리를 옮겨야 하는 조각들은 두 벌 두고
+ * CSS 로 한쪽만 남긴다 — NewsImage 슬롯이 이미 쓰던 방식 그대로다.
  *
- * 출처·시각은 맨 위 줄로 올라간다. 카드를 넘기며 보는 화면이라
- * 어디서 언제 온 기사인지가 본문보다 먼저 눈에 걸려야 한다.
+ * 두 도면이 실제로 갈리는 곳:
+ * · 출처·시각·원제 — 5A 는 맨 윗줄과 제목 밑, 6B 는 **요약 상자 아래 캡션 한 줄**
+ * · 주제 — 5A 는 윗줄 글 속에, 6B 는 킥커 옆 **알약**
+ * · 머리 블록 — 6B 는 킥커+제목을 묶어 아래에 구분선을 긋는다
+ * · 요약 상자 — 6B 는 **104px 로 못박고 그 안에서 구른다**
+ * · 버튼 줄 — 6B 는 위에 구분선을 긋고 원문이 남는 폭을 다 먹는다
+ *
+ * 경계를 lg 로 잡은 이유: 카드가 두 단이 되는 지점이 lg 라서다. 그 아래는
+ * 폭이 얼마든 6B 와 같은 한 단짜리 카드다.
  */
 function LeadCard({
   item,
@@ -641,6 +701,7 @@ function LeadCard({
   total: number;
 }) {
   const extra = item.alsoIn?.length ?? 0;
+  const alsoIn = extra > 0 ? ` · 다른 매체 ${extra}곳` : "";
 
   return (
     /*
@@ -665,22 +726,40 @@ function LeadCard({
           이미지 슬롯의 flex-1 도 나눠 가질 여백을 못 찾는다.
       */}
       <div className="flex min-w-0 flex-1 flex-col gap-3.5">
+      {/*
+        머리 블록 (도면 6B: gap 8px · 아래 구분선 · padding-bottom 12px).
+        lg 에선 이 묶음이 없던 것처럼 보여야 해서 구분선을 걷고 간격만
+        예전 부모 간격(14px)으로 되돌린다 — 묶기 전과 픽셀이 같아진다.
+      */}
+      <div className="flex flex-col gap-2 border-b border-line pb-3 lg:gap-3.5 lg:border-b-0 lg:pb-0">
       <div className="flex flex-wrap items-center gap-2.5">
         <Kicker tone="accent">
           먼저 볼 것 · {String(index).padStart(2, "0")} /{" "}
           {String(total).padStart(2, "0")}
         </Kicker>
-        <span className="hidden h-px flex-1 bg-line sm:block" />
-        <span className="text-[11px] text-dim break-keep">
+        {/* 6B 는 주제를 킥커 옆 알약으로 세운다. lg 는 5A 대로 오른쪽 글줄 안에 둔다 */}
+        {item.topic ? (
+          <span className="lg:hidden">
+            <Tag tone="accent">{item.topic}</Tag>
+          </span>
+        ) : null}
+        <span className="hidden h-px flex-1 bg-line lg:block" />
+        <span className="hidden text-[11px] text-dim break-keep lg:inline">
           {item.source} · {formatRelative(item.publishedAt)}
           {item.topic ? ` · ${item.topic}` : ""}
-          {extra > 0 ? ` · 다른 매체 ${extra}곳` : ""}
+          {alsoIn}
         </span>
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <h4 className="font-display text-2xl leading-[1.18] break-keep sm:text-[31px]">
-          {/* 점수를 제목 안에 둔다 — 밖에 두면 제목이 두 줄일 때 따로 논다 */}
+        {/* 23px — 도면 6B 의 h4. lg 부터는 두 단이라 글줄이 짧아져 더 키운다 */}
+        <h4 className="font-display text-[23px] leading-[1.18] break-keep sm:text-[31px]">
+          {/*
+            점수를 제목 안에 둔다 — 밖에 두면 제목이 두 줄일 때 따로 논다.
+            ⚠ 도면 6B 에는 점수가 아예 없다. 도면이 점수 없는 가짜 기사로
+              그려져서지, 빼라는 뜻이 아니다 — 2층 목록도 같은 자리에 점수를
+              달고 있고, 그걸 지우면 "왜 이게 위에 있나" 를 물을 근거가 사라진다.
+          */}
           {item.score !== undefined ? (
             <span className="mr-2.5 align-[0.15em] text-base font-semibold text-accent tabular-nums sm:text-lg">
               {item.score}
@@ -688,10 +767,14 @@ function LeadCard({
           ) : null}
           {item.headline ?? item.title}
         </h4>
-        {/* 표제가 없으면 위가 이미 원제다. 같은 문장을 두 번 쓰지 않는다 */}
+        {/* 표제가 없으면 위가 이미 원제다. 같은 문장을 두 번 쓰지 않는다.
+            lg 만이다 — 6B 에선 원제가 요약 아래 캡션 줄로 내려간다 */}
         {item.headline ? (
-          <p className="text-xs leading-[1.4] text-dim">원제 · {item.title}</p>
+          <p className="hidden text-xs leading-[1.4] text-dim lg:block">
+            원제 · {item.title}
+          </p>
         ) : null}
+      </div>
       </div>
 
       {/*
@@ -715,39 +798,86 @@ function LeadCard({
           — 기사가 길면 칸이 늘어난다 — 새로 생긴 고장이 아니다. 글도 버튼도
           잘리지 않고 그대로 닿는다(실측 확인).
       */}
-      <NewsImage item={item} className="flex h-36 w-full shrink-0 lg:hidden" />
+      {/* 도면 6B: 이미지 자리에 1px 테두리가 있다 (오른쪽 단인 lg 쪽엔 없다) */}
+      <NewsImage
+        item={item}
+        className="flex h-36 w-full shrink-0 border border-line lg:hidden"
+      />
 
+      {/*
+        요약 + 캡션 묶음 (도면 6B: flex:1 · min-height:0 · gap 8px).
+
+        lg 에선 `contents` 로 이 묶음을 통째로 지운다 — 상자가 다시 글 단의
+        직계 자식이 되어 예전과 픽셀이 같아진다. 캡션은 어차피 lg:hidden 이다.
+      */}
+      <div className="flex min-h-0 flex-1 flex-col gap-2 lg:contents">
       {/*
         요약과 "왜 중요한가" 를 한 상자에 담는다.
         ⚠ 예전엔 요약이 상자 위 맨 문단이었다. 그러면 카드에 글 덩어리가 둘이 되어
           어느 쪽을 먼저 읽어야 하는지가 흐려진다. 한 상자에 넣고 안에서만 나눈다.
         ⚠ 둘 다 없으면 아예 안 그린다 — 요약 단계를 안 거친 기사가 그렇고,
           그때 빈 색 상자만 남으면 고장 난 것처럼 보인다.
+
+        ⚠ **높이를 104px 로 못박는다** (도면 6B 원문: height:104px; overflow-y:auto).
+          여기가 1층 카드가 한 화면에 안 들어가던 진짜 이유였다 — 요약이 길면
+          상자가 그대로 늘어나 카드를 밀어냈다 (실측 390×844: 상자 214px,
+          칸 713px > 스크롤 칸 609px). 도면대로 못박으면 609 = 609 로 딱 맞는다.
+          넘치는 글은 사라지지 않고 상자 안에서 구른다 (.summary-scroll).
+          lg 부터는 카드가 두 단이라 세로가 남는다 — 거기선 예전처럼 늘어난다.
       */}
       {item.summary || item.relevance ? (
-        <div className="flex flex-col gap-2 border-l-2 border-accent bg-accent-soft px-3.5 py-3 text-accent-ink sm:min-h-24">
+        <div className="summary-scroll flex h-26 shrink-0 flex-col gap-2 overflow-y-auto border-l-2 border-accent bg-accent-soft px-3.5 py-3 text-accent-ink lg:h-auto lg:min-h-24 lg:overflow-visible">
+          {/* 1.7 · keep-all 은 도면 6B 값이다. lg 는 5A 그대로 둔다 —
+              줄간격을 넓히면 데스크탑 상자가 6px 늘어난다 (실측 169 → 175) */}
           {item.summary ? (
-            <p className="text-sm leading-relaxed text-pretty">{item.summary}</p>
+            <p className="text-sm leading-[1.7] break-keep text-pretty lg:leading-relaxed lg:break-normal">
+              {item.summary}
+            </p>
           ) : null}
           {item.relevance ? (
             /* 왜 중요한가엔 한 겹 더 힘을 준다 — 요약은 사실이고 이건 판단이다 */
-            <p className="text-sm leading-relaxed font-medium text-pretty">
+            <p className="text-sm leading-[1.7] font-medium break-keep text-pretty lg:leading-relaxed lg:break-normal">
               {item.relevance}
             </p>
           ) : null}
         </div>
       ) : null}
 
-      {/* mt-auto — 카드 높이가 제각각이어도 버튼 줄은 바닥에 나란히 선다 */}
-      <div className="mt-auto flex flex-wrap gap-2 pt-1">
-        <LinkButton href={item.url} external variant="primary">
+      {/*
+        캡션 한 줄 (도면 6B: "샘플 매체 A · 3시간 전 · 원제 [샘플] …", 11px).
+        5A 는 이 셋을 맨 윗줄과 제목 밑으로 나눠 놓는데, 6B 는 요약 아래 한 줄로
+        모은다 — 제목·이미지·요약이 위를 차지하고 출처는 각주가 되는 배치다.
+      */}
+      <span className="shrink-0 text-[11px] leading-[1.5] text-dim break-keep lg:hidden">
+        {item.source} · {formatRelative(item.publishedAt)}
+        {item.headline ? ` · 원제 ${item.title}` : ""}
+        {alsoIn}
+      </span>
+      </div>
+
+      {/*
+        버튼 줄 (도면 6B: 위 구분선 · padding-top 12px · gap 8px · 원문이 flex:1).
+        mt-auto — 카드 높이가 제각각이어도 버튼 줄은 바닥에 나란히 선다.
+
+        ⚠ 담아두기·검색은 도면에서 opacity:0.45 로 흐리다. 아직 붙지 않은
+          기능이라는 뜻이고, PendingButton 이 `disabled` + `disabled:opacity-45`
+          (ui.tsx)로 이미 같은 값을 낸다 — 흐릴 뿐 아니라 실제로 안 눌린다.
+          도면보다 한 걸음 더 간 셈이라 그대로 둔다.
+      */}
+      <div className="mt-auto flex shrink-0 gap-2 border-t border-line pt-3 lg:flex-wrap lg:border-t-0 lg:pt-1">
+        <LinkButton
+          href={item.url}
+          external
+          variant="primary"
+          className="flex-1 lg:flex-none"
+        >
           <ExternalLink size={16} strokeWidth={1.5} />
           원문
         </LinkButton>
-        <PendingButton title="담아두기" className="w-11 px-0">
+        <PendingButton title="담아두기" className="w-11 shrink-0 px-0">
           <Bookmark size={16} strokeWidth={1.5} />
         </PendingButton>
-        <PendingButton title="Claude 로 조사" className="w-11 px-0">
+        <PendingButton title="Claude 로 조사" className="w-11 shrink-0 px-0">
           <Search size={16} strokeWidth={1.5} />
         </PendingButton>
       </div>

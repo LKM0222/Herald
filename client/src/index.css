@@ -356,6 +356,68 @@ body {
   inset: -4px -12px -4px -2px;
 }
 
+/*
+ * 날짜 줄의 하루 전/뒤 버튼도 같은 문법이다 (News.tsx 의 DayStep).
+ *
+ * 보이는 크기는 도면 6B 대로 32px 이고, 누르는 자리만 사방 6px 씩 넓혀
+ * 44px 로 만든다 — CLAUDE.md 의 44px 규칙과 도면의 납작한 한 줄을 둘 다
+ * 지키는 유일한 방법이다. 버튼을 진짜로 44px 로 키우면 줄 높이가 그만큼
+ * 늘어나고, 그 높이는 아래 스냅 칸(1층 카드)에서 그대로 빠진다.
+ *
+ * ⚠ 도트와 달리 여기는 사방을 다 채울 수 있다. 넓힐 자리를 미리 비워 뒀다:
+ *   · 위아래 — 줄의 pt-2.5(10px) / pb-1.5(6px) 안쪽이라 칩 줄을 안 덮는다.
+ *     덮으면 칩 바로 위를 눌렀을 때 하루 전으로 넘어간다.
+ *   · 가로 — 버튼 사이 gap-3(12px)을 6px 씩 나눠 갖고, 바깥쪽은 px-4(16px)
+ *     여백 안이라 화면 밖으로 안 나간다.
+ *
+ * ⚠ md 부터는 걸지 않는다. 6B 는 모바일 도면이고, 데스크탑 날짜 줄은
+ *   간격(6px)도 누르는 자리도 예전 그대로여야 한다 — 6px 틈에 12px 을
+ *   밀어 넣으면 두 버튼의 누름자리가 겹친다.
+ */
+@media (width < 48rem) {
+  .date-step {
+    position: relative;
+  }
+  /*
+   * ⚠ -6px 이 아니라 -7px 이다. 절대 배치의 기준은 테두리 상자가 아니라
+   *   **패딩 상자**라, 1px 테두리를 두른 32px 버튼의 기준은 30px 이다.
+   *   -6px 이면 30+12=42px 밖에 안 나온다 (실측으로 42×42 를 보고 고쳤다).
+   *   -7px 이면 30+14=44px 이고, 보이는 테두리 기준으로는 사방 6px 이라
+   *   위 pt-2.5(10px) · 아래 pb-1.5(6px) · 옆 gap-3(12px 을 6px 씩) 안에
+   *   정확히 들어앉는다.
+   */
+  .date-step::after {
+    content: "";
+    position: absolute;
+    inset: -7px;
+  }
+}
+
+/*
+ * 1층 카드의 요약 상자 (도면 6B 의 data-thinscroll).
+ *
+ * 상자 높이를 104px 로 못박은 대신 넘치는 글은 안에서 구른다. 폰은 스크롤바가
+ * 겹쳐 뜨는 방식이라 아무것도 안 보이지만, 마우스가 달린 좁은 창에서는 굵은
+ * 기본 스크롤바가 상자를 반쯤 덮는다 — 도면대로 가늘게 깎고 강조색을 준다.
+ * 그 실선이 "여기 더 있다" 는 유일한 표시라 색까지 지우면 안 된다.
+ */
+.summary-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-accent) transparent;
+}
+.summary-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.summary-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.summary-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-accent);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
 .news-panel {
   box-sizing: border-box;
   scroll-snap-align: start;

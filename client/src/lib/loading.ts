@@ -38,6 +38,7 @@ export type PlanStep = { id: StageId; label: string };
  *            화면은 그동안에도 그려져 있다. 그래서 한 단계다.
  * · archive  아직 화면이 없다.
  * · stash    아직 화면이 없다.
+ * · notes    아직 화면이 없다.
  */
 export const STAGE_PLAN: Record<ViewId, PlanStep[]> = {
   home: [
@@ -52,6 +53,7 @@ export const STAGE_PLAN: Record<ViewId, PlanStep[]> = {
   settings: [{ id: "settings", label: "설정과 자격증명 상태 가져오기" }],
   archive: [],
   stash: [],
+  notes: [],
 };
 
 /** 가운데 칸에 쓰는 문구. 단계마다 기다리는 것이 달라서 한 문장으로 못 쓴다. */

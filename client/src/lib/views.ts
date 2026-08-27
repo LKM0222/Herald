@@ -4,6 +4,7 @@ import {
   CalendarDays,
   House,
   Newspaper,
+  NotebookPen,
   Settings as SettingsIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -20,6 +21,7 @@ export type ViewId =
   | "news"
   | "archive"
   | "stash"
+  | "notes"
   | "schedule"
   | "settings";
 
@@ -44,6 +46,7 @@ export const VIEWS: ViewDef[] = [
   { id: "schedule", Icon: CalendarDays, label: "일정", ready: true },
   { id: "archive", Icon: Archive, label: "지난 기록", ready: false },
   { id: "stash", Icon: Bookmark, label: "담아둔 것", ready: false },
+  { id: "notes", Icon: NotebookPen, label: "메모", ready: false },
   { id: "settings", Icon: SettingsIcon, label: "설정", ready: true },
 ];
 
@@ -52,8 +55,8 @@ export const DESKTOP_TABS: ViewId[] = [
   "home",
   "news",
   "schedule",
-  "archive",
   "stash",
+  "notes",
 ];
 
 /**
@@ -64,9 +67,16 @@ export const MOBILE_TABS: ViewId[] = [
   "news",
   "schedule",
   "home",
-  "archive",
   "stash",
+  "notes",
 ];
+
+/**
+ * ⚠ **지난 기록은 탭 줄에서 뺐다.** 다섯 칸은 늘리지 않기로 했다 — 390px 에서
+ *   여섯 칸이 되면 한 칸이 65px 로 좁아지고, 홈이 정중앙(3/5)이라는 배치가
+ *   깨진다. 지난 날짜는 뉴스의 날짜 화살표로 이미 갈 수 있어서 이 줄에서
+ *   제일 덜 아쉬운 칸이었다. 설정처럼 등록부에는 남아 `?v=archive` 는 산다.
+ */
 
 /**
  * 탭 줄에서 빠져 머리줄로 올라간 화면. 모바일·PC 양쪽에서 같은 자리에 선다 —

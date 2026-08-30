@@ -235,3 +235,46 @@ export type SecretStatus = {
   /** 저장분이 없고 .env 로 들어온 경우. 화면에서 바꿀 수 없다 */
   fromEnv?: boolean;
 };
+
+/**
+ * 문제 풀기 한 판의 기록.
+ *
+ * 문제 본문은 담지 않는다 — 화면이 quiz.json 을 이미 들고 있어서 id 로 찾으면
+ * 되고, 300문제를 판마다 복사해 두면 기록이 문제집보다 무거워진다.
+ * 다만 `no` 와 `title` 은 함께 남긴다. 나중에 문제집에서 빠지거나 번호가 밀린
+ * 문제가 생겨도 "무엇을 풀었는지" 는 기록만으로 읽혀야 하기 때문이다.
+ */
+export type QuizGrade = "correct" | "wrong";
+
+export type QuizAttempt = {
+  /** quiz.json 의 문제 id (q1 …) */
+  id: string;
+  no: number;
+  title: string;
+  /** 아직 채점하지 않은 문제. 건너뛴 채로 끝낼 수 있다 */
+  grade: QuizGrade | null;
+};
+
+export type QuizSession = {
+  /** 화면에서 만든 uuid. 채점할 때마다 같은 id 로 덮어쓴다 */
+  id: string;
+  startedAt: string;
+  /** 마지막으로 채점하거나 끝낸 시각 */
+  updatedAt: string;
+  /** 어느 범위에서 뽑았는지 — "전체" · "CS" · "자료구조" */
+  scope: string;
+  attempts: QuizAttempt[];
+};
+
+/** 목록에 쓰는 요약. 판을 열지 않아도 몇 개 맞았는지 보이게 한다. */
+export type QuizSessionSummary = {
+  id: string;
+  startedAt: string;
+  updatedAt: string;
+  scope: string;
+  total: number;
+  correct: number;
+  wrong: number;
+  /** 채점하지 않고 넘어간 문제 수 */
+  ungraded: number;
+};

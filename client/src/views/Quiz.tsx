@@ -1,34 +1,52 @@
 import { useEffect, useMemo, useState } from "react";
+import type { QuizGrade, QuizSession } from "@shared/types";
 import {
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  CornerDownRight,
   Eye,
-  EyeOff,
-  Hash,
+  History,
   LayoutGrid,
   Play,
   RotateCcw,
+  X,
 } from "lucide-react";
-import { Button, Kicker } from "../components/ui";
+import { Answer, Card, Cover, Meta } from "../components/QuizCard";
+import { Button } from "../components/ui";
+import { describeFailure, saveQuizSession } from "../lib/api";
+import type { Config } from "../lib/config";
 import { loadQuiz, partsOf, topicsOf, type Question } from "../lib/quiz";
+import { QuizHistory } from "./QuizHistory";
 
 /**
  * 면접 문제 300개를 덮어두고 하나씩 펼쳐 보는 화면.
  *
  * 답이 **기본으로 가려져 있는 것**이 이 화면의 전부다. 펼쳐놓고 읽으면
- * 그냥 문서고, 가려두면 떠올려보게 된다. 그래서 "전부 펼치기"는 있어도
- * 기본값이 되지는 않는다.
+ * 그냥 문서고, 가려두면 떠올려보게 된다.
  *
- * 두 모드를 오간다:
+ * 세 모드를 오간다:
  * - 격자 — 훑어보기. 30장씩 늘려 그린다 (300장을 한 번에 그리면 첫 칠이 늦다)
- * - 풀기 — 한 문제씩. 앞에서부터 고른 개수만큼 가져온다
+ * - 풀기 — 무작위로 뽑은 한 판. 답을 펼치면 맞았는지 틀렸는지 채점한다
+ * - 기록 — 지난 판들. 서버에 저장된다
  */
 
 const PAGE = 30;
 
-export function Quiz() {
+/** 한 판. 뽑힌 문제와 그 판의 채점 기록이 항상 같이 다녀야 어긋나지 않는다. */
+type Run = { deck: Question[]; session: QuizSession };
+
+/** Fisher-Yates. 원본을 건드리지 않는다 — pool 은 useMemo 가 들고 있는 것이다. */
+function shuffle(items: Question[]): Question[] {
+  const copy = items.slice();
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+export function Quiz({ config }: { config: Config }) {
   const [all, setAll] = useState<Question[] | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
 
@@ -36,17 +54,23 @@ export function Quiz() {
   const [topic, setTopic] = useState("all");
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [shown, setShown] = useState(PAGE);
+
+  const [run, setRun] = useState<Run | null>(null);
+  const [runOpen, setRunOpen] = useState<Record<string, boolean>>({});
   const [idx, setIdx] = useState(0);
-  const [solving, setSolving] = useState(false);
   const [asking, setAsking] = useState(false);
   const [count, setCount] = useState(0);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const [showingHistory, setShowingHistory] = useState(false);
 
   useEffect(() => {
     let alive = true;
     loadQuiz().then(
       (questions) => alive && setAll(questions),
       (error: unknown) =>
-        alive && setFailed(error instanceof Error ? error.message : String(error)),
+        alive &&
+        setFailed(error instanceof Error ? error.message : String(error)),
     );
     return () => {
       alive = false;
@@ -68,8 +92,8 @@ export function Quiz() {
         <h2 className="font-display text-xl">문제를 불러오지 못했어요</h2>
         <p className="text-sm">{failed}</p>
         <p className="text-xs leading-relaxed text-dim">
-          이 화면은 서버를 쓰지 않아요. 새로고침해도 계속 이러면 배포된 번들에
-          quiz.json 이 빠진 거예요.
+          이 화면의 문제는 서버를 쓰지 않아요. 새로고침해도 계속 이러면 배포된
+          번들에 quiz.json 이 빠진 거예요.
         </p>
       </div>
     );
@@ -79,33 +103,77 @@ export function Quiz() {
     return <p className="self-start text-sm text-dim">문제를 불러오는 중…</p>;
   }
 
-  /** 고른 만큼만 앞에서 가져온다. 0 이거나 풀보다 크면 전부. */
-  const deck =
-    solving && count > 0 && count < pool.length ? pool.slice(0, count) : pool;
-  const cursor = Math.min(idx, Math.max(deck.length - 1, 0));
-  const current = deck[cursor];
-  const atLast = cursor >= deck.length - 1;
+  if (showingHistory) {
+    return (
+      <QuizHistory
+        config={config}
+        questions={all}
+        onBack={() => setShowingHistory(false)}
+      />
+    );
+  }
+
+  const cursor = run ? Math.min(idx, Math.max(run.deck.length - 1, 0)) : 0;
+  const current = run?.deck[cursor];
+  const atLast = run ? cursor >= run.deck.length - 1 : false;
 
   const openCount = all.filter((q) => open[q.id]).length;
   const scopeName = topic !== "all" ? topic : part !== "all" ? part : "전체";
 
-  const reveal = (id: string, on: boolean) =>
-    setOpen((prev) => ({ ...prev, [id]: on }));
+  /** 저장 실패는 알리되 막지 않는다 — 서버가 없어도 문제는 계속 풀려야 한다. */
+  const persist = async (session: QuizSession) => {
+    const result = await saveQuizSession(config, session);
+    setSaveError(result.kind === "ok" ? null : describeFailure(result));
+  };
 
-  /** 범위를 바꾸면 펼침 상태는 두되 위치·장수는 처음으로 되돌린다. */
+  const start = (picked: number) => {
+    const deck = shuffle(pool).slice(0, Math.min(picked, pool.length));
+    const now = new Date().toISOString();
+    const session: QuizSession = {
+      id: crypto.randomUUID(),
+      startedAt: now,
+      updatedAt: now,
+      scope: scopeName,
+      attempts: deck.map((q) => ({
+        id: q.id,
+        no: q.no,
+        title: q.title,
+        grade: null,
+      })),
+    };
+    setRun({ deck, session });
+    setRunOpen({});
+    setIdx(0);
+    setSaveError(null);
+    void persist(session);
+  };
+
+  const grade = (mark: QuizGrade) => {
+    if (!run) return;
+    const next: QuizSession = {
+      ...run.session,
+      updatedAt: new Date().toISOString(),
+      attempts: run.session.attempts.map((attempt, i) =>
+        i === cursor ? { ...attempt, grade: mark } : attempt,
+      ),
+    };
+    setRun({ ...run, session: next });
+    void persist(next);
+    // 채점했으면 다음 문제로. 마지막 문제면 그 자리에 둔다 — 끝 버튼이 거기 있다.
+    if (cursor < run.deck.length - 1) setIdx(cursor + 1);
+  };
+
   const rescope = (nextPart: string, nextTopic: string) => {
     setPart(nextPart);
     setTopic(nextTopic);
-    setIdx(0);
     setShown(PAGE);
   };
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <Header
-        scopeName={scopeName}
-        solving={solving}
-        deckLength={deck.length}
+        scopeName={run ? run.session.scope : scopeName}
+        run={run}
         poolLength={pool.length}
         cursor={cursor}
         openCount={openCount}
@@ -118,40 +186,38 @@ export function Quiz() {
           setCount(count || Math.min(10, pool.length));
           setAsking(true);
         }}
-        onBackToGrid={() => setSolving(false)}
+        onHistory={() => setShowingHistory(true)}
+        onBackToGrid={() => setRun(null)}
       />
 
-      {solving ? null : (
-        <Chips
-          all={all}
-          part={part}
-          topic={topic}
-          onPick={rescope}
-        />
-      )}
+      {saveError ? (
+        <p className="rounded-[10px] border border-dashed border-line px-3 py-2 text-xs leading-relaxed text-dim">
+          채점은 화면에 남았지만 서버에 저장하지 못했어요 — {saveError}
+        </p>
+      ) : null}
 
-      {solving ? (
-        current ? (
-          <Solve
-            question={current}
-            opened={!!open[current.id]}
-            onReveal={reveal}
-            position={cursor + 1}
-            total={deck.length}
-            deck={deck}
-            open={open}
-            onJump={setIdx}
-            onPrev={() => setIdx(Math.max(cursor - 1, 0))}
-            onNext={() => (atLast ? setSolving(false) : setIdx(cursor + 1))}
-            atLast={atLast}
-          />
-        ) : null
+      {run ? null : <Chips all={all} part={part} topic={topic} onPick={rescope} />}
+
+      {run && current ? (
+        <Solve
+          question={current}
+          opened={!!runOpen[current.id]}
+          onReveal={(id, on) => setRunOpen((prev) => ({ ...prev, [id]: on }))}
+          position={cursor + 1}
+          run={run}
+          onJump={setIdx}
+          onPrev={() => setIdx(Math.max(cursor - 1, 0))}
+          onNext={() => (atLast ? setRun(null) : setIdx(cursor + 1))}
+          atLast={atLast}
+          grade={run.session.attempts[cursor]?.grade ?? null}
+          onGrade={grade}
+        />
       ) : (
         <Grid
           questions={pool.slice(0, shown)}
           poolLength={pool.length}
           open={open}
-          onReveal={reveal}
+          onReveal={(id, on) => setOpen((prev) => ({ ...prev, [id]: on }))}
           onMore={() => setShown((n) => n + PAGE)}
         />
       )}
@@ -165,8 +231,7 @@ export function Quiz() {
           onCancel={() => setAsking(false)}
           onGo={() => {
             setAsking(false);
-            setSolving(true);
-            setIdx(0);
+            start(count || pool.length);
           }}
         />
       ) : null}
@@ -176,8 +241,7 @@ export function Quiz() {
 
 function Header({
   scopeName,
-  solving,
-  deckLength,
+  run,
   poolLength,
   cursor,
   openCount,
@@ -185,11 +249,11 @@ function Header({
   onReset,
   onRevealAll,
   onStart,
+  onHistory,
   onBackToGrid,
 }: {
   scopeName: string;
-  solving: boolean;
-  deckLength: number;
+  run: Run | null;
   poolLength: number;
   cursor: number;
   openCount: number;
@@ -197,32 +261,36 @@ function Header({
   onReset: () => void;
   onRevealAll: () => void;
   onStart: () => void;
+  onHistory: () => void;
   onBackToGrid: () => void;
 }) {
+  const graded = run
+    ? run.session.attempts.filter((a) => a.grade !== null).length
+    : 0;
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
       <div className="flex min-w-0 items-baseline gap-2">
         <h2 className="font-display text-lg">문제</h2>
         <span className="min-w-0 truncate text-xs text-dim">
-          {solving
-            ? `${scopeName} ${deckLength}문제 · ${cursor + 1}번째`
+          {run
+            ? `${scopeName} ${run.deck.length}문제 · ${cursor + 1}번째 · 채점 ${graded}`
             : `${scopeName} ${poolLength}문제 · ${openCount}개 펼침 · 남은 ${total - openCount}`}
         </span>
       </div>
 
-      {/*
-        shrink-0 을 주지 않는다 — 320px 에서 세 버튼이 한 줄에 못 들어가는데,
-        안 줄어들게 막으면 flex-wrap 이 걸리기 전에 오른쪽 버튼이 화면 밖으로
-        나간다 (가로 스크롤은 안 생기고 잘리기만 해서 더 늦게 발견된다).
-      */}
       <div className="flex flex-wrap items-center gap-2">
-        {solving ? (
+        {run ? (
           <Button onClick={onBackToGrid}>
             <LayoutGrid size={15} />
             격자로
           </Button>
         ) : (
           <>
+            <Button onClick={onHistory}>
+              <History size={15} />
+              기록
+            </Button>
             <Button onClick={onReset}>
               <RotateCcw size={15} />
               다시 덮기
@@ -244,8 +312,7 @@ function Header({
 
 /**
  * 분야 칩은 두 단이다. 위 단은 전체 · CS · Unity · 게임수학이고, 파트를 고르면
- * 그 파트의 세부 분야가 점선 칩으로 이어 붙는다.
- * 34개 분야를 한 줄에 늘어놓지 않기 위한 것 — 폰에서는 그게 전부 줄바꿈된다.
+ * 그 파트의 세부 분야가 아랫줄에 붙는다.
  */
 function Chips({
   all,
@@ -280,7 +347,7 @@ function Chips({
     /*
       두 줄로 나눈다. 한 줄에 이어 붙이면 파트와 세부 분야가 같은 단으로 보이고,
       개수가 파트마다 달라(CS 9 · Unity 14 · 게임수학 11) 줄바꿈이 매번 다른
-      자리에서 일어나 어디까지가 위 단인지가 화면마다 바뀐다.
+      자리에서 일어나 어디까지가 위 단인지가 화면 폭마다 바뀐다.
     */
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-1.5">
@@ -299,8 +366,7 @@ function Chips({
             onClick={() => onPick(name, "all")}
             /*
               세부 분야를 고른 동안에도 켜둔다 — 줄이 갈리면서 "지금 어느 파트
-              안에 있나"를 말해주는 것이 이 칩밖에 없어졌다. 한 줄이던 때는
-              옆에 붙은 세부 칩들이 그 역할을 겸했다.
+              안에 있나"를 말해주는 것이 이 칩밖에 없어졌다.
             */
             className={partChip(part === name)}
           >
@@ -314,7 +380,6 @@ function Chips({
 
       {part === "all" ? null : (
         <div className="flex flex-wrap items-center gap-1.5">
-          {/* 세부 분야를 풀어주는 자리. 위 단의 파트 칩을 다시 누르는 것과 같다 */}
           <button
             type="button"
             onClick={() => onPick(part, "all")}
@@ -388,215 +453,66 @@ function Grid({
   );
 }
 
-const LEVEL_STYLES: Record<string, string> = {
-  상: "bg-accent text-bg",
-  중: "border border-accent text-accent",
-  하: "border border-line text-dim",
-};
-
-function Meta({ question, trailing }: { question: Question; trailing?: string }) {
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="font-display text-xs tabular-nums text-dim">
-        [{question.no}]
-      </span>
-      <span
-        className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-[11px] whitespace-nowrap ${
-          LEVEL_STYLES[question.level] ?? LEVEL_STYLES["하"]
-        }`}
-      >
-        난이도 {question.level}
-      </span>
-      <span className="inline-flex shrink-0 items-center rounded-full border border-line px-2.5 py-0.5 text-[11px] whitespace-nowrap text-mid">
-        {question.type}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-right text-[11px] text-dim">
-        {trailing ??
-          `${question.star ? "★ " : ""}${question.part} · ${question.topic}`}
-      </span>
-    </div>
-  );
-}
-
-/** 덮개. 점선 빗금으로 "여기 아래에 뭔가 있다"를 보이게 둔다. */
-function Cover({ onClick, big }: { onClick: () => void; big?: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex w-full items-center justify-center gap-2 rounded-[10px] border border-dashed border-line text-mid transition-colors select-none hover:border-accent hover:text-accent ${
-        big ? "min-h-14 text-sm" : "min-h-11 text-[13px]"
-      }`}
-      style={{
-        backgroundImage:
-          "repeating-linear-gradient(135deg,transparent,transparent 6px,var(--color-line) 6px,var(--color-line) 7px)",
-      }}
-    >
-      <EyeOff size={big ? 16 : 15} />
-      답 보기
-    </button>
-  );
-}
-
-function Answer({
-  question,
-  onHide,
-  big,
-}: {
-  question: Question;
-  onHide: () => void;
-  big?: boolean;
-}) {
-  return (
-    <div
-      className={`flex flex-col gap-2.5 border-l-2 border-accent bg-accent-soft ${
-        big ? "p-5" : "p-4"
-      }`}
-    >
-      <div className="flex items-center gap-2">
-        <Kicker tone="accent">정답</Kicker>
-        <span className="flex-1" />
-        <button
-          type="button"
-          onClick={onHide}
-          className="inline-flex min-h-9 items-center gap-1.5 px-1 text-[11px] text-dim transition-colors hover:text-accent"
-        >
-          <EyeOff size={13} />
-          덮기
-        </button>
-      </div>
-
-      <p
-        className={`font-semibold break-keep text-accent-ink ${
-          big ? "text-base leading-relaxed" : "text-sm leading-relaxed"
-        }`}
-      >
-        {question.answer}
-      </p>
-
-      <div className="h-px bg-line" />
-
-      <Kicker>면접 답변</Kicker>
-      <p className={`break-keep ${big ? "text-[15px] leading-8" : "text-[13px] leading-7"}`}>
-        {question.interview}
-      </p>
-
-      {question.keywords.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5">
-          {question.keywords.map((word) => (
-            <span
-              key={word}
-              className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-0.5 text-[11px] text-mid"
-            >
-              <Hash size={11} />
-              {word}
-            </span>
-          ))}
-        </div>
-      ) : null}
-
-      <div className="flex flex-col gap-1.5 border-t border-line pt-2.5">
-        <span className="flex items-center gap-1.5">
-          <CornerDownRight size={12} className="text-dim" />
-          <Kicker>꼬리 질문</Kicker>
-        </span>
-        <p className={`font-medium break-keep ${big ? "text-[15px]" : "text-[13px]"} leading-relaxed`}>
-          {question.followQ}
-        </p>
-        <p className={`break-keep text-mid ${big ? "text-sm" : "text-[13px]"} leading-7`}>
-          {question.followA}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function Card({
-  question,
-  opened,
-  onReveal,
-}: {
-  question: Question;
-  opened: boolean;
-  onReveal: (id: string, on: boolean) => void;
-}) {
-  return (
-    <div className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-line bg-surface">
-      <div className="flex flex-col gap-2 p-4 pb-3">
-        <Meta question={question} />
-        <p className="font-display text-xl leading-tight break-keep">
-          {question.title}
-        </p>
-        <p className="text-[13px] leading-7 break-keep text-mid">
-          {question.question}
-        </p>
-      </div>
-
-      <div className="px-4 pb-4">
-        {opened ? null : <Cover onClick={() => onReveal(question.id, true)} />}
-      </div>
-
-      {opened ? (
-        <div className="px-4 pb-4">
-          <Answer question={question} onHide={() => onReveal(question.id, false)} />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function Solve({
   question,
   opened,
   onReveal,
   position,
-  total,
-  deck,
-  open,
+  run,
   onJump,
   onPrev,
   onNext,
   atLast,
+  grade,
+  onGrade,
 }: {
   question: Question;
   opened: boolean;
   onReveal: (id: string, on: boolean) => void;
   position: number;
-  total: number;
-  deck: Question[];
-  open: Record<string, boolean>;
+  run: Run;
   onJump: (index: number) => void;
   onPrev: () => void;
   onNext: () => void;
   atLast: boolean;
+  grade: QuizGrade | null;
+  onGrade: (mark: QuizGrade) => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
-      {/* 진행 점. 30개를 넘어가면 폰에서 한 줄에 안 들어와 가로로만 굴린다 */}
+      {/* 진행 점. 채점한 것은 채워지고, 틀린 것은 테두리만 남는다 */}
       <div
         className="flex items-center gap-1 overflow-x-auto pb-1"
         data-scrollarea
       >
-        {deck.map((q, i) => (
-          <button
-            key={q.id}
-            type="button"
-            aria-label={`${i + 1}번째 문제로`}
-            onClick={() => onJump(i)}
-            className={`h-1.5 shrink-0 rounded-full transition-all ${
-              i === position - 1
-                ? "w-8 bg-accent"
-                : open[q.id]
-                  ? "w-5 bg-accent/45"
-                  : "w-5 bg-line"
-            }`}
-          />
-        ))}
+        {run.deck.map((q, i) => {
+          const mark = run.session.attempts[i]?.grade ?? null;
+          return (
+            <button
+              key={q.id}
+              type="button"
+              aria-label={`${i + 1}번째 문제로`}
+              onClick={() => onJump(i)}
+              className={`h-1.5 shrink-0 rounded-full transition-all ${
+                i === position - 1
+                  ? "w-8 bg-accent"
+                  : mark === "correct"
+                    ? "w-5 bg-accent"
+                    : mark === "wrong"
+                      ? "w-5 bg-accent/35"
+                      : "w-5 bg-line"
+              }`}
+            />
+          );
+        })}
       </div>
 
       <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface">
         <div className="flex flex-col gap-3 p-5 pb-4 sm:p-7 sm:pb-5">
-          <Meta question={question} trailing={`${position} / ${total}`} />
+          <Meta
+            question={question}
+            trailing={`${position} / ${run.deck.length}`}
+          />
           <p className="font-display text-2xl leading-tight break-keep sm:text-3xl">
             {question.title}
           </p>
@@ -605,13 +521,17 @@ function Solve({
           </p>
         </div>
 
-        <div className="px-5 pb-5 sm:px-7 sm:pb-7">
+        <div className="flex flex-col gap-4 px-5 pb-5 sm:px-7 sm:pb-7">
           {opened ? (
-            <Answer
-              question={question}
-              onHide={() => onReveal(question.id, false)}
-              big
-            />
+            <>
+              <Answer
+                question={question}
+                onHide={() => onReveal(question.id, false)}
+                big
+              />
+              {/* 답을 본 다음에만 묻는다 — 보기 전에 채점할 수 있으면 기록이 뜻을 잃는다 */}
+              <Grader grade={grade} onGrade={onGrade} />
+            </>
           ) : (
             <Cover onClick={() => onReveal(question.id, true)} big />
           )}
@@ -624,13 +544,60 @@ function Solve({
           이전
         </Button>
         <span className="min-w-0 truncate text-center text-xs text-dim">
-          {opened ? "답을 봤어요" : "먼저 떠올려보고 펼쳐보세요"}
+          {opened
+            ? grade
+              ? grade === "correct"
+                ? "맞았다고 기록했어요"
+                : "틀렸다고 기록했어요"
+              : "맞았는지 골라주세요"
+            : "먼저 떠올려보고 펼쳐보세요"}
         </span>
         <Button variant="primary" onClick={onNext}>
           {atLast ? "다 풀었어요" : "다음"}
           <ChevronRight size={15} />
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** 맞음·틀림 두 칸. 이미 고른 것이 있으면 그 칸이 켜져 있어 다시 고를 수 있다. */
+function Grader({
+  grade,
+  onGrade,
+}: {
+  grade: QuizGrade | null;
+  onGrade: (mark: QuizGrade) => void;
+}) {
+  const base =
+    "flex min-h-12 flex-1 items-center justify-center gap-2 rounded-[10px] border text-sm transition-colors";
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => onGrade("correct")}
+        className={`${base} ${
+          grade === "correct"
+            ? "border-accent bg-accent font-medium text-bg"
+            : "border-line text-mid hover:border-accent hover:text-accent"
+        }`}
+      >
+        <Check size={16} />
+        맞았어요
+      </button>
+      <button
+        type="button"
+        onClick={() => onGrade("wrong")}
+        className={`${base} ${
+          grade === "wrong"
+            ? "border-accent bg-accent-soft font-medium text-accent-ink"
+            : "border-line text-mid hover:border-accent hover:text-accent"
+        }`}
+      >
+        <X size={16} />
+        틀렸어요
+      </button>
     </div>
   );
 }
@@ -678,7 +645,7 @@ function CountDialog({
         <div className="flex flex-col gap-1">
           <h2 className="font-display text-xl">몇 문제 풀까요</h2>
           <p className="text-xs text-dim">
-            {scopeName} {poolLength}문제 중에서 앞에서부터 가져옵니다
+            {scopeName} {poolLength}문제 중에서 무작위로 뽑습니다
           </p>
         </div>
 

@@ -3,6 +3,8 @@ import type {
   CalendarEvent,
   CalendarSubscription,
   NewsSchedule,
+  QuizSession,
+  QuizSessionSummary,
   SecretStatus,
 } from "@shared/types";
 import type { Config } from "./config";
@@ -415,4 +417,50 @@ export function describeFailure(failure: Failure): string {
   return failure.kind === "unauthorized"
     ? "인증이 만료됐습니다. 연결을 다시 설정해 주세요."
     : `서버에 닿지 않습니다 (${failure.message})`;
+}
+
+/**
+ * 문제 풀기 기록.
+ *
+ * ⚠ 이 셋만은 실패해도 화면을 막지 않는다. 문제 자체는 정적 파일이라 서버 없이도
+ *   풀 수 있어서, 기록이 안 되는 것 때문에 문제집을 못 보게 되면 손해가 더 크다.
+ *   부르는 쪽이 Failure 를 받아 조용히 안내만 띄운다.
+ */
+export type QuizSessionsResult = Result<{ sessions: QuizSessionSummary[] }>;
+export type QuizSessionResult = Result<{ session: QuizSession }>;
+
+export async function fetchQuizSessions(
+  config: Config,
+): Promise<QuizSessionsResult> {
+  const response = await request(config, "/api/quiz/sessions");
+  if (isFailure(response)) return response;
+  const body = (await response.json()) as { sessions: QuizSessionSummary[] };
+  return { kind: "ok", sessions: body.sessions };
+}
+
+export async function fetchQuizSession(
+  config: Config,
+  id: string,
+): Promise<QuizSessionResult> {
+  const response = await request(
+    config,
+    `/api/quiz/sessions/${encodeURIComponent(id)}`,
+  );
+  if (isFailure(response)) return response;
+  const body = (await response.json()) as { session: QuizSession };
+  return { kind: "ok", session: body.session };
+}
+
+/** 판 전체를 통째로 보낸다. 같은 id 면 서버가 덮어쓴다. */
+export async function saveQuizSession(
+  config: Config,
+  session: QuizSession,
+): Promise<QuizSessionResult> {
+  const response = await request(config, "/api/quiz/sessions", {
+    method: "POST",
+    body: JSON.stringify({ session }),
+  });
+  if (isFailure(response)) return response;
+  const body = (await response.json()) as { session: QuizSession };
+  return { kind: "ok", session: body.session };
 }

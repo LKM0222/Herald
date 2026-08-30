@@ -131,8 +131,12 @@ export default function App() {
             onConfigChanged={() => setConfig(loadConfig())}
           />
         ) : view === "quiz" ? (
-          /* 서버를 안 타므로 BriefingView 의 실패 갈래(연결·인증·빈 날짜)를 안 지난다 */
-          <Quiz />
+          /*
+            브리핑을 안 쓰므로 BriefingView 의 실패 갈래(연결·인증·빈 날짜)를
+            안 지난다. config 는 채점 기록을 저장·조회할 때만 쓰고, 서버가
+            없어도 문제 자체는 정적 파일이라 그대로 풀린다.
+          */
+          <Quiz config={config} />
         ) : (
           <BriefingView
             view={view}

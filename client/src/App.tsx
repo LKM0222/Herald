@@ -10,6 +10,7 @@ import { Button, LinkButton } from "./components/ui";
 import { Setup } from "./Setup";
 import { Home } from "./views/Home";
 import { News } from "./views/News";
+import { Quiz } from "./views/Quiz";
 import { ScheduleView } from "./views/ScheduleView";
 import { Settings } from "./views/Settings";
 import { fetchBriefing, type BriefingResult } from "./lib/api";
@@ -24,6 +25,19 @@ import { hrefFor, viewFromLocation, type ViewId } from "./lib/views";
 function dateFromLocation(): string {
   const requested = new URLSearchParams(window.location.search).get("d");
   return requested && isISODate(requested) ? requested : todayISO();
+}
+
+/**
+ * 브리핑을 안 쓰는 화면들. 설정은 서버 주소를 고치는 자리라서, 문제는 내용이
+ * 고정이라 서버를 아예 안 타서다 (`lib/quiz.ts`).
+ *
+ * ⚠ 여기 빠뜨리면 두 가지가 같이 어긋난다 — 쓰지도 않을 요청을 보내고,
+ *   `StageReport` 가 영영 "기다리는 중"으로 남아 진행선이 안 꺼진다.
+ */
+const BRIEFING_FREE: ViewId[] = ["settings", "quiz"];
+
+function needsBriefing(view: ViewId): boolean {
+  return !BRIEFING_FREE.includes(view);
 }
 
 export default function App() {
@@ -45,8 +59,8 @@ export default function App() {
 
   useEffect(() => {
     if (!config) return;
-    // 설정 화면은 브리핑을 쓰지 않는다. 불필요한 요청을 보내지 않는다.
-    if (view === "settings") return;
+    // 설정·문제 화면은 브리핑을 쓰지 않는다. 불필요한 요청을 보내지 않는다.
+    if (!needsBriefing(view)) return;
     void load(config);
   }, [config, load, view]);
 
@@ -79,12 +93,12 @@ export default function App() {
     <LoadingProvider view={view}>
       {/*
         브리핑 대기는 이 컴포넌트가 들고 있어서 여기서 신고한다.
-        ⚠ 설정 탭은 브리핑을 아예 안 받는다 (위 useEffect 가 그냥 돌아간다).
+        ⚠ 설정·문제 탭은 브리핑을 아예 안 받는다 (위 useEffect 가 그냥 돌아간다).
           그 탭까지 "기다리는 중" 으로 세면 진행선이 영영 안 꺼진다.
       */}
       <StageReport
         stage="briefing"
-        busy={view !== "settings" && result === null}
+        busy={needsBriefing(view) && result === null}
       />
       <AppShell
         view={view}
@@ -116,6 +130,9 @@ export default function App() {
             onReconnect={reconnect}
             onConfigChanged={() => setConfig(loadConfig())}
           />
+        ) : view === "quiz" ? (
+          /* 서버를 안 타므로 BriefingView 의 실패 갈래(연결·인증·빈 날짜)를 안 지난다 */
+          <Quiz />
         ) : (
           <BriefingView
             view={view}

@@ -2,6 +2,7 @@ import {
   Archive,
   Bookmark,
   CalendarDays,
+  CircleHelp,
   House,
   Newspaper,
   NotebookPen,
@@ -22,6 +23,7 @@ export type ViewId =
   | "archive"
   | "stash"
   | "notes"
+  | "quiz"
   | "schedule"
   | "settings";
 
@@ -44,6 +46,7 @@ export const VIEWS: ViewDef[] = [
   { id: "home", Icon: House, label: "홈", ready: true },
   { id: "news", Icon: Newspaper, label: "뉴스", ready: true },
   { id: "schedule", Icon: CalendarDays, label: "일정", ready: true },
+  { id: "quiz", Icon: CircleHelp, label: "문제", ready: true },
   { id: "archive", Icon: Archive, label: "지난 기록", ready: false },
   { id: "stash", Icon: Bookmark, label: "담아둔 것", ready: false },
   { id: "notes", Icon: NotebookPen, label: "메모", ready: false },
@@ -55,8 +58,8 @@ export const DESKTOP_TABS: ViewId[] = [
   "home",
   "news",
   "schedule",
+  "quiz",
   "stash",
-  "notes",
 ];
 
 /**
@@ -67,8 +70,8 @@ export const MOBILE_TABS: ViewId[] = [
   "news",
   "schedule",
   "home",
+  "quiz",
   "stash",
-  "notes",
 ];
 
 /**
@@ -76,6 +79,11 @@ export const MOBILE_TABS: ViewId[] = [
  *   여섯 칸이 되면 한 칸이 65px 로 좁아지고, 홈이 정중앙(3/5)이라는 배치가
  *   깨진다. 지난 날짜는 뉴스의 날짜 화살표로 이미 갈 수 있어서 이 줄에서
  *   제일 덜 아쉬운 칸이었다. 설정처럼 등록부에는 남아 `?v=archive` 는 산다.
+ *
+ * ⚠ **메모도 같은 이유로 탭 줄에서 뺐다.** 문제 화면이 실제로 동작하게 되면서
+ *   다섯 칸 중 하나를 내줘야 했는데, 그때 줄에 서 있던 것 중 유일하게 아직
+ *   `ready: false` 인 두 칸(담아둔 것 · 메모) 가운데 메모를 뺐다.
+ *   등록부에는 남아 `?v=notes` 는 그대로 "준비 중"으로 뜬다.
  */
 
 /**

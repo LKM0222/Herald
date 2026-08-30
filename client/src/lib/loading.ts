@@ -36,6 +36,9 @@ export type PlanStep = { id: StageId; label: string };
  * · settings App 이 브리핑을 아예 안 받는다(App.tsx). 세 구획이 각자 동시에
  *            /api/settings · /api/secrets · /api/calendar/subscriptions 를 부르고,
  *            화면은 그동안에도 그려져 있다. 그래서 한 단계다.
+ * · quiz     서버를 아예 안 탄다. 문제는 정적 파일 하나뿐이고(lib/quiz.ts),
+ *            그건 Quiz 안에서 제 문구로 기다린다 — 여기 한 칸을 만들면
+ *            진행선이 서버를 기다리는 척한다.
  * · archive  아직 화면이 없다.
  * · stash    아직 화면이 없다.
  * · notes    아직 화면이 없다.
@@ -51,6 +54,7 @@ export const STAGE_PLAN: Record<ViewId, PlanStep[]> = {
     { id: "calendar", label: "캘린더에서 일정 가져오기" },
   ],
   settings: [{ id: "settings", label: "설정과 자격증명 상태 가져오기" }],
+  quiz: [],
   archive: [],
   stash: [],
   notes: [],

@@ -262,63 +262,85 @@ function Chips({
     "inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] transition-colors";
   const countText = "font-display tabular-nums opacity-80";
 
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <button
-        type="button"
-        onClick={() => onPick("all", "all")}
-        className={`${chip} ${
-          part === "all"
-            ? "bg-accent text-bg"
-            : "border border-line text-mid hover:border-accent hover:text-accent"
-        }`}
-      >
-        전체<span className={countText}>{all.length}</span>
-      </button>
+  const partChip = (active: boolean) =>
+    `${chip} ${
+      active
+        ? "bg-accent text-bg"
+        : "border border-line text-mid hover:border-accent hover:text-accent"
+    }`;
 
-      {partsOf(all).map((name) => {
-        const active = part === name && topic === "all";
-        return (
+  const topicChip = (active: boolean) =>
+    `${chip} ${
+      active
+        ? "border border-accent bg-accent-soft text-accent-ink"
+        : "border border-dashed border-line text-dim hover:border-accent hover:text-accent"
+    }`;
+
+  return (
+    /*
+      두 줄로 나눈다. 한 줄에 이어 붙이면 파트와 세부 분야가 같은 단으로 보이고,
+      개수가 파트마다 달라(CS 9 · Unity 14 · 게임수학 11) 줄바꿈이 매번 다른
+      자리에서 일어나 어디까지가 위 단인지가 화면마다 바뀐다.
+    */
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => onPick("all", "all")}
+          className={partChip(part === "all")}
+        >
+          전체<span className={countText}>{all.length}</span>
+        </button>
+
+        {partsOf(all).map((name) => (
           <button
             key={name}
             type="button"
             onClick={() => onPick(name, "all")}
-            className={`${chip} ${
-              active
-                ? "bg-accent text-bg"
-                : "border border-line text-mid hover:border-accent hover:text-accent"
-            }`}
+            /*
+              세부 분야를 고른 동안에도 켜둔다 — 줄이 갈리면서 "지금 어느 파트
+              안에 있나"를 말해주는 것이 이 칩밖에 없어졌다. 한 줄이던 때는
+              옆에 붙은 세부 칩들이 그 역할을 겸했다.
+            */
+            className={partChip(part === name)}
           >
             {name}
             <span className={countText}>
               {all.filter((q) => q.part === name).length}
             </span>
           </button>
-        );
-      })}
+        ))}
+      </div>
 
-      {part === "all"
-        ? null
-        : topicsOf(all, part).map((name) => {
-            const active = topic === name;
-            return (
-              <button
-                key={name}
-                type="button"
-                onClick={() => onPick(part, name)}
-                className={`${chip} ${
-                  active
-                    ? "border border-accent bg-accent-soft text-accent-ink"
-                    : "border border-dashed border-line text-dim hover:border-accent hover:text-accent"
-                }`}
-              >
-                {name}
-                <span className={countText}>
-                  {all.filter((q) => q.part === part && q.topic === name).length}
-                </span>
-              </button>
-            );
-          })}
+      {part === "all" ? null : (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {/* 세부 분야를 풀어주는 자리. 위 단의 파트 칩을 다시 누르는 것과 같다 */}
+          <button
+            type="button"
+            onClick={() => onPick(part, "all")}
+            className={topicChip(topic === "all")}
+          >
+            전체
+            <span className={countText}>
+              {all.filter((q) => q.part === part).length}
+            </span>
+          </button>
+
+          {topicsOf(all, part).map((name) => (
+            <button
+              key={name}
+              type="button"
+              onClick={() => onPick(part, name)}
+              className={topicChip(topic === name)}
+            >
+              {name}
+              <span className={countText}>
+                {all.filter((q) => q.part === part && q.topic === name).length}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
